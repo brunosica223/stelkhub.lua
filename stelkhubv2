@@ -1,9 +1,10 @@
 --[[
     STELK HUB - ANIME VORTEX Z
-    Versão: 6.1 - FLY CORRIGIDO
-    - Fly suave e controlado
-    - Anti-kick integrado
-    - Velocidade limitada (seguro)
+    Versão: 6.1 - COMPLETA
+    - Todas as 5 páginas funcionando
+    - Fly suave e anti-kick
+    - Gold funcionando
+    - Detecção de mundo
 ]]
 
 local player = game.Players.LocalPlayer
@@ -16,7 +17,7 @@ local tweenService = game:GetService("TweenService")
 local flyEnabled = false
 local bypassActive = false
 local spinEnabled = false
-local flySpeed = 15 -- REDUZIDO (era 25)
+local flySpeed = 15
 local flyConnection = nil
 local spinConnection = nil
 local currentWorld = "Desconhecido"
@@ -91,6 +92,14 @@ local function getGemsAndGold()
         end
     end
 
+    for _, obj in ipairs(player:GetChildren()) do
+        if obj:IsA("NumberValue") then
+            local name = obj.Name:lower()
+            if name:find("gem") then gems = obj.Value end
+            if name:find("gold") then gold = obj.Value end
+        end
+    end
+
     return gems, gold
 end
 
@@ -131,17 +140,15 @@ local function spinStar(star)
     return false
 end
 
--- ================ FLY CORRIGIDO (SUAVE E ANTI-KICK) ================
+-- ================ FLY CORRIGIDO ================
 
 local function toggleFly()
     if flyEnabled then
-        -- Desativar fly
         if flyConnection then
             flyConnection:Disconnect()
             flyConnection = nil
         end
-        
-        -- Restaurar estado normal do personagem
+
         if player.Character then
             local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
             if humanoid then
@@ -150,12 +157,11 @@ local function toggleFly()
                 humanoid.PlatformStand = false
             end
         end
-        
+
         flyEnabled = false
         return
     end
 
-    -- Ativar fly
     flyEnabled = true
     lastPosition = nil
     positionHistory = {}
@@ -168,38 +174,26 @@ local function toggleFly()
 
         if not root or not humanoid then return end
 
-        -- IMPORTANTE: Manter o personagem em modo plataforma (ajuda a flutuar)
         humanoid.PlatformStand = true
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 
-        -- Pega direção do joystick
         local moveDir = humanoid.MoveDirection
         local camera = workspace.CurrentCamera
 
-        -- Calcula movimento de forma SUAVE
         if moveDir.Magnitude > 0.1 then
-            -- Movimento baseado na câmera (mais natural)
             local forward = camera.CFrame.LookVector * moveDir.Z
             local right = camera.CFrame.RightVector * moveDir.X
-            local up = Vector3.new(0, moveDir.Y, 0) * 0.8 -- Reduzido para não subir rápido demais
+            local up = Vector3.new(0, moveDir.Y, 0) * 0.8
 
-            -- Combina os vetores
             local moveVector = forward + right + up
-            
-            -- Normaliza e aplica velocidade REDUZIDA
-            moveVector = moveVector.Unit * flySpeed * dt * 20 -- Reduzido de 30 para 20
-            
-            -- Aplica movimento suave (não teleporte)
+            moveVector = moveVector.Unit * flySpeed * dt * 20
             root.CFrame = root.CFrame + moveVector
         end
 
-        -- Neutralizar gravidade de forma suave (NÃO teleportar)
-        root.CFrame = root.CFrame + Vector3.new(0, 0.15, 0) -- Reduzido de 0.3 para 0.15
+        root.CFrame = root.CFrame + Vector3.new(0, 0.15, 0)
 
-        -- ANTI-KICK: Simular movimento normal no servidor
         if root.Velocity then
-            -- Limitar velocidade para não parecer suspeito
             root.Velocity = Vector3.new(
                 math.clamp(root.Velocity.X, -50, 50),
                 math.clamp(root.Velocity.Y, -50, 50),
@@ -207,7 +201,6 @@ local function toggleFly()
             )
         end
 
-        -- Manter histórico de posição (para enganar anti-cheat)
         table.insert(positionHistory, root.Position)
         if #positionHistory > 10 then
             table.remove(positionHistory, 1)
@@ -237,7 +230,7 @@ local function toggleBypass()
                 if method == "FireServer" then
                     local remoteName = tostring(self):lower()
                     if remoteName:find("anticheat") or remoteName:find("gravity") or remoteName:find("position") then
-                        return -- Bloqueia remotes suspeitos
+                        return
                     end
                 end
 
@@ -247,7 +240,6 @@ local function toggleBypass()
             setreadonly(mt, true)
         end
 
-        -- Desconectar eventos de anti-cheat
         local connections = getconnections and getconnections(game:GetService("ScriptContext").Error) or {}
         for _, conn in ipairs(connections) do
             conn:Disable()
@@ -263,7 +255,6 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Frame principal
 local mainFrame = Instance.new("Frame")
 mainFrame.Parent = screenGui
 mainFrame.BackgroundColor3 = colors.background
@@ -624,10 +615,11 @@ starInfo.TextColor3 = colors.textDim
 starInfo.Font = Enum.Font.Gotham
 starInfo.TextSize = 12
 
+local infoCorner = Instance.new("UICorner")
 infoCorner.CornerRadius = UDim.new(0, 8)
 infoCorner.Parent = starInfo
 
--- ================ PÁGINA 3: FLY (CORRIGIDA) ================
+-- ================ PÁGINA 3: FLY ================
 
 local page3 = Instance.new("Frame")
 page3.Parent = content
@@ -852,6 +844,7 @@ local creditsCardCorner = Instance.new("UICorner")
 creditsCardCorner.CornerRadius = UDim.new(0, 15)
 creditsCardCorner.Parent = creditsCard
 
+-- Avatar
 local avatar = Instance.new("Frame")
 avatar.Parent = creditsCard
 avatar.BackgroundColor3 = colors.accent
@@ -871,6 +864,7 @@ avatarText.TextColor3 = colors.text
 avatarText.Font = Enum.Font.GothamBold
 avatarText.TextSize = 40
 
+-- Nome do Criador
 local creatorName = Instance.new("TextLabel")
 creatorName.Parent = creditsCard
 creatorName.BackgroundTransparency = 1
@@ -891,18 +885,20 @@ creatorRole.TextColor3 = colors.textDim
 creatorRole.Font = Enum.Font.Gotham
 creatorRole.TextSize = 12
 
+-- Linha divisória
 local divider = Instance.new("Frame")
 divider.Parent = creditsCard
 divider.BackgroundColor3 = colors.background
 divider.Size = UDim2.new(0, 300, 0, 1)
 divider.Position = UDim2.new(0.5, -150, 0, 170)
 
+-- Versão
 local version = Instance.new("TextLabel")
 version.Parent = creditsCard
 version.BackgroundTransparency = 1
 version.Size = UDim2.new(0, 200, 0, 20)
 version.Position = UDim2.new(0.5, -100, 0, 180)
-version.Text = "Versão 6.1 - Fly Suave"
+version.Text = "Versão 6.1 - Completa"
 version.TextColor3 = colors.textDim
 version.Font = Enum.Font.Gotham
 version.TextSize = 12
@@ -961,7 +957,7 @@ local function updateStarsList()
     local text = "STARS ENCONTRADAS: " .. #stars .. "\n\n"
 
     if #stars == 0 then
-        text = text .. "Nenhuma star encontrada."
+        text = text .. "Nenhuma star encontrada.\n\nTente:\n- Usar o botão ATUALIZAR\n- Se aproximar de possíveis stars"
     else
         for i, star in ipairs(stars) do
             if i <= 8 then
@@ -1102,5 +1098,5 @@ updateHomePage()
 updateStarsList()
 switchPage(1)
 
-print("✅ Stelk Hub v6.1 - Fly Suave carregado!")
-print("⚡ Velocidade reduzida para evitar kick")
+print("✅ Stelk Hub v6.1 - Completo carregado!")
+print("📌 Páginas: INÍCIO | STARS | FLY | BYPASS | CRÉDITOS")
