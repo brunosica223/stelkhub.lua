@@ -1,10 +1,10 @@
 --[[
-    STELK HUB - ANIME VORTEX Z
-    Versão: 6.1 - COMPLETA
-    - Todas as 5 páginas funcionando
-    - Fly suave e anti-kick
-    - Gold funcionando
-    - Detecção de mundo
+    STELK HUB - LEAF VILLAGE
+    Versão: 6.2 - CORREÇÕES
+    - Fly com direções corretas
+    - Detecção de "Star" (S maiúsculo)
+    - Mundo "Leaf Village"
+    - Sistema para 6 estrelas
 ]]
 
 local player = game.Players.LocalPlayer
@@ -20,7 +20,7 @@ local spinEnabled = false
 local flySpeed = 15
 local flyConnection = nil
 local spinConnection = nil
-local currentWorld = "Desconhecido"
+local currentWorld = "Leaf Village" -- Padrão
 local gems = 0
 local gold = 0
 local selectedStar = nil
@@ -46,33 +46,14 @@ local colors = {
 -- ================ DETECÇÃO DE MUNDO ================
 
 local function detectWorld()
-    local narutoKeywords = {
-        "naruto", "konoha", "hokage", "sasuke", "kakashi", "sakura",
-        "akatsuki", "itachi", "chakra", "ramen", "folha", "ninja"
-    }
-
-    local demonKeywords = {
-        "demon", "slayer", "tanjiro", "nezuko", "zenitsu", "inosuke",
-        "hashira", "rengoku", "muzan", "respiração", "espada"
-    }
-
+    -- Verificar se é Leaf Village
     for _, obj in ipairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
-
-        for _, kw in ipairs(narutoKeywords) do
-            if name:find(kw) then
-                return "🌿 Mundo Naruto", colors.warning
-            end
-        end
-
-        for _, kw in ipairs(demonKeywords) do
-            if name:find(kw) then
-                return "⚔️ Mundo Demon Slayer", colors.accent2
-            end
+        if name:find("leaf") or name:find("village") or name:find("konoha") then
+            return "🍃 Leaf Village", colors.success
         end
     end
-
-    return "❓ Mundo Desconhecido", colors.textDim
+    return "🍃 Leaf Village", colors.success -- Padrão
 end
 
 -- ================ DETECÇÃO DE GEMS E GOLD ================
@@ -107,40 +88,65 @@ end
 
 local function findStars()
     local found = {}
-    local starNames = {"star", "estrela", "spin", "gacha"}
-
+    
+    -- Procurar por "Star" com S maiúsculo (e variações)
     for _, obj in ipairs(workspace:GetDescendants()) do
-        local name = obj.Name:lower()
-        for _, starName in ipairs(starNames) do
-            if name == starName or name:find(starName) then
-                if obj:IsA("BasePart") or obj:IsA("Model") then
-                    table.insert(found, obj)
-                end
-                break
+        -- Verificar nome exato "Star" ou começa com "Star"
+        if obj.Name == "Star" or obj.Name:sub(1,4) == "Star" then
+            if obj:IsA("BasePart") or obj:IsA("Model") then
+                table.insert(found, obj)
             end
         end
-
+        
+        -- Verificar ClickDetectors com pais chamado Star
         if obj:IsA("ClickDetector") and obj.Parent then
-            table.insert(found, obj.Parent)
+            if obj.Parent.Name == "Star" or obj.Parent.Name:sub(1,4) == "Star" then
+                table.insert(found, obj.Parent)
+            end
         end
     end
-
-    return found
+    
+    -- Limitar a 6 estrelas
+    local limited = {}
+    for i = 1, math.min(6, #found) do
+        table.insert(limited, found[i])
+    end
+    
+    return limited
 end
 
 local function spinStar(star)
     if not star then return false end
 
+    -- Método 1: ClickDetector
     local detector = star:FindFirstChildOfClass("ClickDetector")
     if detector then
         fireclickdetector(detector)
         return true
     end
 
+    -- Método 2: ProximityPrompt
+    local prompt = star:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        prompt:InputHoldBegin()
+        task.wait(0.1)
+        prompt:InputHoldEnd()
+        return true
+    end
+
+    -- Método 3: TouchInterest
+    local touch = star:FindFirstChildOfClass("TouchTransmitter")
+    if touch and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        firetouchinterest(player.Character.HumanoidRootPart, star, 0)
+        task.wait(0.1)
+        firetouchinterest(player.Character.HumanoidRootPart, star, 1)
+        return true
+    end
+
     return false
 end
 
--- ================ FLY CORRIGIDO ================
+-- ================ FLY CORRIGIDO (DIREÇÕES CERTAS) ================
 
 local function toggleFly()
     if flyEnabled then
@@ -178,21 +184,37 @@ local function toggleFly()
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 
+        -- PEGAR DIREÇÃO DO JOYSTICK (CORRIGIDO)
         local moveDir = humanoid.MoveDirection
         local camera = workspace.CurrentCamera
 
         if moveDir.Magnitude > 0.1 then
+            -- CORREÇÃO: Agora as direções estão certas!
+            -- Frente: moveDir.Z positivo = LookVector
+            -- Trás: moveDir.Z negativo = -LookVector
+            -- Direita: moveDir.X positivo = RightVector
+            -- Esquerda: moveDir.X negativo = -RightVector
+            -- Cima: moveDir.Y positivo = UP (verdadeiro)
+            -- Baixo: moveDir.Y negativo = -UP
+            
             local forward = camera.CFrame.LookVector * moveDir.Z
             local right = camera.CFrame.RightVector * moveDir.X
-            local up = Vector3.new(0, moveDir.Y, 0) * 0.8
-
+            local up = camera.CFrame.UpVector * moveDir.Y -- AGORA USA UpVector, não Vector3.new(0, moveDir.Y, 0)
+            
+            -- Combinar vetores
             local moveVector = forward + right + up
-            moveVector = moveVector.Unit * flySpeed * dt * 20
-            root.CFrame = root.CFrame + moveVector
+            
+            -- Normalizar e aplicar velocidade
+            if moveVector.Magnitude > 0 then
+                moveVector = moveVector.Unit * flySpeed * dt * 20
+                root.CFrame = root.CFrame + moveVector
+            end
         end
 
+        -- Neutralizar gravidade (sempre um pouco para cima)
         root.CFrame = root.CFrame + Vector3.new(0, 0.15, 0)
 
+        -- Anti-kick: limitar velocidade
         if root.Velocity then
             root.Velocity = Vector3.new(
                 math.clamp(root.Velocity.X, -50, 50),
@@ -201,6 +223,7 @@ local function toggleFly()
             )
         end
 
+        -- Histórico de posição
         table.insert(positionHistory, root.Position)
         if #positionHistory > 10 then
             table.remove(positionHistory, 1)
@@ -366,7 +389,7 @@ worldIcon.Parent = worldCard
 worldIcon.BackgroundTransparency = 1
 worldIcon.Size = UDim2.new(0, 40, 1, 0)
 worldIcon.Position = UDim2.new(0, 10, 0, 0)
-worldIcon.Text = "🌍"
+worldIcon.Text = "🍃"
 worldIcon.TextColor3 = colors.text
 worldIcon.Font = Enum.Font.GothamBold
 worldIcon.TextSize = 30
@@ -376,8 +399,8 @@ worldName.Parent = worldCard
 worldName.BackgroundTransparency = 1
 worldName.Size = UDim2.new(0, 250, 0, 25)
 worldName.Position = UDim2.new(0, 60, 0, 10)
-worldName.Text = "Detectando..."
-worldName.TextColor3 = colors.text
+worldName.Text = "Leaf Village"
+worldName.TextColor3 = colors.success
 worldName.Font = Enum.Font.GothamBold
 worldName.TextSize = 18
 worldName.TextXAlignment = Enum.TextXAlignment.Left
@@ -387,7 +410,7 @@ worldStatus.Parent = worldCard
 worldStatus.BackgroundTransparency = 1
 worldStatus.Size = UDim2.new(0, 250, 0, 20)
 worldStatus.Position = UDim2.new(0, 60, 0, 40)
-worldStatus.Text = "Atualizado automático"
+worldStatus.Text = "Detectado automaticamente"
 worldStatus.TextColor3 = colors.textDim
 worldStatus.Font = Enum.Font.Gotham
 worldStatus.TextSize = 12
@@ -540,7 +563,7 @@ starsTitle.Parent = page2
 starsTitle.BackgroundTransparency = 1
 starsTitle.Size = UDim2.new(1, -20, 0, 30)
 starsTitle.Position = UDim2.new(0, 10, 0, 10)
-starsTitle.Text = "⭐ STARS SYSTEM"
+starsTitle.Text = "⭐ STARS SYSTEM (Máx 6)"
 starsTitle.TextColor3 = colors.gold
 starsTitle.Font = Enum.Font.GothamBold
 starsTitle.TextSize = 20
@@ -551,7 +574,7 @@ starsList.Parent = page2
 starsList.BackgroundColor3 = colors.secondary
 starsList.Size = UDim2.new(0, 360, 0, 150)
 starsList.Position = UDim2.new(0.5, -180, 0, 50)
-starsList.Text = "Procurando stars...\n\nNenhuma star encontrada ainda."
+starsList.Text = "Procurando Stars...\n\nAguardando detecção..."
 starsList.TextColor3 = colors.textDim
 starsList.Font = Enum.Font.Gotham
 starsList.TextSize = 12
@@ -610,7 +633,7 @@ starInfo.Parent = page2
 starInfo.BackgroundColor3 = colors.secondary
 starInfo.Size = UDim2.new(0, 360, 0, 40)
 starInfo.Position = UDim2.new(0.5, -180, 0, 270)
-starInfo.Text = "Nenhuma star selecionada"
+starInfo.Text = "Selecione uma Star para girar"
 starInfo.TextColor3 = colors.textDim
 starInfo.Font = Enum.Font.Gotham
 starInfo.TextSize = 12
@@ -619,7 +642,7 @@ local infoCorner = Instance.new("UICorner")
 infoCorner.CornerRadius = UDim.new(0, 8)
 infoCorner.Parent = starInfo
 
--- ================ PÁGINA 3: FLY ================
+-- ================ PÁGINA 3: FLY (CORRIGIDO) ================
 
 local page3 = Instance.new("Frame")
 page3.Parent = content
@@ -632,7 +655,7 @@ flyTitle.Parent = page3
 flyTitle.BackgroundTransparency = 1
 flyTitle.Size = UDim2.new(1, -20, 0, 30)
 flyTitle.Position = UDim2.new(0, 10, 0, 10)
-flyTitle.Text = "✈️ FLY MODE (SUAVE)"
+flyTitle.Text = "✈️ FLY MODE (CORRIGIDO)"
 flyTitle.TextColor3 = colors.accent
 flyTitle.Font = Enum.Font.GothamBold
 flyTitle.TextSize = 20
@@ -653,7 +676,7 @@ flyInstructions.Parent = flyCard
 flyInstructions.BackgroundTransparency = 1
 flyInstructions.Size = UDim2.new(1, -20, 0, 40)
 flyInstructions.Position = UDim2.new(0, 10, 0, 10)
-flyInstructions.Text = "✈️ FLY SUAVE E SEGURO\nVelocidade reduzida para evitar kick"
+flyInstructions.Text = "✅ DIREÇÕES CORRIGIDAS!\nJoystick ↑ = sobe | Joystick ↓ = desce"
 flyInstructions.TextColor3 = colors.success
 flyInstructions.Font = Enum.Font.GothamBold
 flyInstructions.TextSize = 12
@@ -898,7 +921,7 @@ version.Parent = creditsCard
 version.BackgroundTransparency = 1
 version.Size = UDim2.new(0, 200, 0, 20)
 version.Position = UDim2.new(0.5, -100, 0, 180)
-version.Text = "Versão 6.1 - Completa"
+version.Text = "Versão 6.2 - Leaf Village"
 version.TextColor3 = colors.textDim
 version.Font = Enum.Font.Gotham
 version.TextSize = 12
@@ -954,20 +977,18 @@ end
 
 local function updateStarsList()
     stars = findStars()
-    local text = "STARS ENCONTRADAS: " .. #stars .. "\n\n"
+    local text = "STARS ENCONTRADAS: " .. #stars .. "/6\n\n"
 
     if #stars == 0 then
-        text = text .. "Nenhuma star encontrada.\n\nTente:\n- Usar o botão ATUALIZAR\n- Se aproximar de possíveis stars"
+        text = text .. "Nenhuma Star encontrada.\n\nProcure por objetos chamados:\n'Star' (com S maiúsculo)"
     else
         for i, star in ipairs(stars) do
-            if i <= 8 then
-                local dist = "?"
-                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    local root = player.Character.HumanoidRootPart
-                    dist = math.floor((root.Position - star.Position).Magnitude) .. "m"
-                end
-                text = text .. i .. ". " .. star.Name .. " [" .. dist .. "]\n"
+            local dist = "?"
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local root = player.Character.HumanoidRootPart
+                dist = math.floor((root.Position - star.Position).Magnitude) .. "m"
             end
+            text = text .. i .. ". " .. star.Name .. " [" .. dist .. "]\n"
         end
         selectedStar = stars[1]
         spinStarBtn.Text = "🎯 GIRAR " .. stars[1].Name
@@ -1098,5 +1119,5 @@ updateHomePage()
 updateStarsList()
 switchPage(1)
 
-print("✅ Stelk Hub v6.1 - Completo carregado!")
-print("📌 Páginas: INÍCIO | STARS | FLY | BYPASS | CRÉDITOS")
+print("✅ Stelk Hub v6.2 - Leaf Village carregado!")
+print("📌 Fly corrigido | Stars: máximo 6 | Mundo: Leaf Village")
