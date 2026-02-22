@@ -1,11 +1,11 @@
 --[[
     STELK HUB - LEAF WORLD
-    Versão: 10.0 - MOBILE OPTIMIZED
-    - Tamanho compacto (400x450)
-    - Scroll em todas as páginas
+    Versão: 11.0 - FINAL EDITION
+    - Tamanho 400x400 (mais compacto)
+    - Botão toggle para esconder/mostrar
     - Detecção de units aprimorada
-    - Seleção de mobs com indicador
-    - Auto Kill com teleporte
+    - Movimento suave até mob (anti-kick)
+    - Estrelas com debug
 ]]
 
 local player = game.Players.LocalPlayer
@@ -28,6 +28,7 @@ local selectedStar = nil
 local stars = {}
 local mobs = {}
 local units = {}
+local hubVisible = true
 
 -- ================ CORES ================
 
@@ -84,30 +85,49 @@ local function getGemsAndGold()
     return gems, gold
 end
 
--- ================ SISTEMA DE STARS ================
+-- ================ SISTEMA DE STARS (APRIMORADO) ================
 
 local function findStars()
     local found = {}
     
-    if not inLeafWorld then return found end
+    if not inLeafWorld then 
+        print("🔍 Fora do Leaf World - não procurando estrelas")
+        return found 
+    end
+    
+    print("🔍 Procurando Stars no Leaf World...")
+    
+    -- Palavras-chave expandidas
+    local starKeywords = {"star", "estrela", "spin", "gacha", "roda", "wheel", "crystal"}
     
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Star" or obj.Name:sub(1,4) == "Star" or obj.Name:lower():find("star") then
-            if obj:IsA("BasePart") or obj:IsA("Model") then
-                table.insert(found, obj)
+        local name = obj.Name:lower()
+        for _, kw in ipairs(starKeywords) do
+            if name:find(kw) then
+                if obj:IsA("BasePart") or obj:IsA("Model") then
+                    print("✅ Encontrado: " .. obj.Name)
+                    table.insert(found, obj)
+                    break
+                end
             end
         end
         
+        -- Procura por ClickDetectors
         if obj:IsA("ClickDetector") and obj.Parent then
             local parentName = obj.Parent.Name:lower()
-            if parentName:find("star") then
-                table.insert(found, obj.Parent)
+            for _, kw in ipairs(starKeywords) do
+                if parentName:find(kw) then
+                    print("✅ Encontrado ClickDetector em: " .. obj.Parent.Name)
+                    table.insert(found, obj.Parent)
+                    break
+                end
             end
         end
         
         if #found >= 6 then break end
     end
     
+    print("🔍 Total de Stars: " .. #found)
     return found
 end
 
@@ -148,71 +168,73 @@ local function findMobs()
     return found
 end
 
--- ================ SISTEMA DE UNITS (PETS) - MELHORADO ================
+-- ================ SISTEMA DE UNITS (BUSCA PROFUNDA) ================
 
 local function findUnits()
     local found = {}
     
-    -- Pastas comuns onde units podem estar
-    local possiblePaths = {
-        player:FindFirstChild("Units"),
-        player:FindFirstChild("Pets"),
-        player:FindFirstChild("Characters"),
-        player:FindFirstChild("Inventory"),
-        player:FindFirstChild("Bag"),
-        player:FindFirstChild("Storage"),
-        player:FindFirstChild("MyUnits"),
-        player:FindFirstChild("UnitFolder"),
-        player:FindFirstChild("DeployedUnits"),
-        player:FindFirstChild("ActiveUnits")
-    }
-    
-    for _, folder in ipairs(possiblePaths) do
-        if folder then
-            for _, child in ipairs(folder:GetChildren()) do
-                if child:IsA("Folder") or child:IsA("Model") or child:IsA("Configuration") then
-                    -- Tenta encontrar dano
-                    local damage = 0
-                    local damageValue = child:FindFirstChild("Damage") or 
-                                        child:FindFirstChild("Power") or 
-                                        child:FindFirstChild("Atk") or
-                                        child:FindFirstChild("Attack")
-                    if damageValue and damageValue:IsA("NumberValue") then
-                        damage = damageValue.Value
-                    end
-                    
+    -- Função recursiva para procurar em todas as pastas do jogador
+    local function searchIn(container)
+        if not container then return end
+        for _, child in ipairs(container:GetChildren()) do
+            -- Se for um modelo ou pasta, pode ser uma unit
+            if child:IsA("Model") or child:IsA("Folder") or child:IsA("Configuration") then
+                -- Tenta encontrar valor de dano
+                local damage = 0
+                local damageValue = child:FindFirstChild("Damage") or 
+                                    child:FindFirstChild("Power") or 
+                                    child:FindFirstChild("Atk") or
+                                    child:FindFirstChild("Attack") or
+                                    child:FindFirstChild("Dano")
+                if damageValue and damageValue:IsA("NumberValue") then
+                    damage = damageValue.Value
+                end
+                
+                -- Se tem dano ou nome sugestivo, adiciona
+                if damage > 0 or child.Name:lower():find("unit") or child.Name:lower():find("pet") then
                     table.insert(found, {
                         Name = child.Name,
                         Damage = damage,
                         Object = child
                     })
                 end
+                
+                -- Continua procurando dentro
+                searchIn(child)
             end
         end
     end
     
-    -- Se não encontrou nada, procura em qualquer lugar dentro do jogador
-    if #found == 0 then
-        for _, child in ipairs(player:GetChildren()) do
-            if child:IsA("Folder") or child:IsA("Model") then
-                local damage = 0
-                local damageValue = child:FindFirstChild("Damage") or child:FindFirstChild("Power")
-                if damageValue and damageValue:IsA("NumberValue") then
-                    damage = damageValue.Value
-                end
-                table.insert(found, {
-                    Name = child.Name,
-                    Damage = damage,
-                    Object = child
-                })
-            end
+    -- Pastas principais para começar a busca
+    local roots = {
+        player,
+        player:FindFirstChild("PlayerGui"),
+        player:FindFirstChild("Backpack"),
+        player:FindFirstChild("StarterGear"),
+        game:GetService("ReplicatedStorage")
+    }
+    
+    for _, root in ipairs(roots) do
+        if root then
+            searchIn(root)
+        end
+    end
+    
+    -- Remove duplicatas (pelo nome e dano)
+    local unique = {}
+    local seen = {}
+    for _, unit in ipairs(found) do
+        local key = unit.Name .. "_" .. unit.Damage
+        if not seen[key] then
+            seen[key] = true
+            table.insert(unique, unit)
         end
     end
     
     -- Ordenar por dano (maior primeiro)
-    table.sort(found, function(a, b) return a.Damage > b.Damage end)
+    table.sort(unique, function(a, b) return a.Damage > b.Damage end)
     
-    return found
+    return unique
 end
 
 -- ================ EQUIPAR MELHOR UNIT ================
@@ -229,6 +251,7 @@ local function equipBestUnit()
     print("✅ Melhor unit: " .. best.Name .. " (Dano: " .. best.Damage .. ")")
     
     if best.Object then
+        -- Tenta remote
         local remote = player:FindFirstChild("EquipUnit") or 
                       player:FindFirstChild("SelectUnit") or
                       game:GetService("ReplicatedStorage"):FindFirstChild("EquipUnit")
@@ -237,19 +260,43 @@ local function equipBestUnit()
             remote:FireServer(best.Object)
         end
         
+        -- Tenta mover para o personagem
         if player.Character then
             best.Object.Parent = player.Character
         end
     end
 end
 
--- ================ AUTO KILL COM TELEPORTE ================
+-- ================ MOVIMENTO SUAVE ATÉ MOB (ANTI-KICK) ================
 
-local function teleportToMob(mob)
+local function smoothMoveToMob(mob)
     if not mob then return end
     local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob:FindFirstChild("UpperTorso")
-    if root and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        player.Character.HumanoidRootPart.CFrame = root.CFrame + Vector3.new(0, 5, 0)
+    if not root then return end
+    
+    local char = player.Character
+    if not char then return end
+    local charRoot = char:FindFirstChild("HumanoidRootPart")
+    if not charRoot then return end
+    
+    local targetPos = root.Position + Vector3.new(0, 5, 0)
+    local distance = (targetPos - charRoot.Position).Magnitude
+    
+    -- Se estiver muito longe, voa rápido, mas não teleporta
+    if distance > 100 then
+        -- Move com velocidade alta mas gradual
+        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        local goal = {CFrame = CFrame.new(targetPos)}
+        local tween = tweenService:Create(charRoot, tweenInfo, goal)
+        tween:Play()
+        tween.Completed:Wait()
+    else
+        -- Move suavemente
+        local tweenInfo = TweenInfo.new(distance / 50, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        local goal = {CFrame = CFrame.new(targetPos)}
+        local tween = tweenService:Create(charRoot, tweenInfo, goal)
+        tween:Play()
+        tween.Completed:Wait()
     end
 end
 
@@ -257,10 +304,8 @@ local function attackMob(mob)
     if not mob then return end
     local humanoid = mob:FindFirstChildOfClass("Humanoid")
     if humanoid and humanoid.Health > 0 then
-        -- Tenta danificar diretamente
-        humanoid.Health = humanoid.Health - 1000 -- Dano simbólico (ajuste)
-        -- Se quiser que as units ataquem, talvez seja necessário usar remotas
-        -- Vamos deixar o dano direto como fallback
+        -- Dano direto (pode ser ajustado)
+        humanoid.Health = humanoid.Health - 1000
     end
 end
 
@@ -275,7 +320,7 @@ local function startAutoKill()
     
     task.spawn(function()
         while autoKillActive and selectedMob and selectedMob.Parent do
-            teleportToMob(selectedMob)
+            smoothMoveToMob(selectedMob)
             attackMob(selectedMob)
             task.wait(1)
         end
@@ -319,7 +364,7 @@ local function toggleBypass()
     end)
 end
 
--- ================ CRIAR GUI (400x450) ================
+-- ================ CRIAR GUI (400x400) ================
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "StelkHub"
@@ -327,21 +372,38 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Frame principal (400x450)
+-- Botão toggle (sempre visível)
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Parent = screenGui
+toggleBtn.BackgroundColor3 = colors.accent
+toggleBtn.Size = UDim2.new(0, 40, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.Text = "≡"
+toggleBtn.TextColor3 = colors.background
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 24
+toggleBtn.BorderSizePixel = 0
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 8)
+toggleCorner.Parent = toggleBtn
+
+-- Frame principal (400x400)
 local mainFrame = Instance.new("Frame")
 mainFrame.Parent = screenGui
 mainFrame.BackgroundColor3 = colors.background
 mainFrame.BorderSizePixel = 0
-mainFrame.Size = UDim2.new(0, 400, 0, 450)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -225)
+mainFrame.Size = UDim2.new(0, 400, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -200)
 mainFrame.Active = true
 mainFrame.Draggable = true
+mainFrame.Visible = true
 
--- Top Bar (45px)
+-- Top Bar (40px)
 local topBar = Instance.new("Frame")
 topBar.Parent = mainFrame
 topBar.BackgroundColor3 = colors.secondary
-topBar.Size = UDim2.new(1, 0, 0, 45)
+topBar.Size = UDim2.new(1, 0, 0, 40)
 topBar.BorderSizePixel = 0
 
 local title = Instance.new("TextLabel")
@@ -352,25 +414,15 @@ title.Position = UDim2.new(0, 10, 0, 0)
 title.Text = "STELK HUB"
 title.TextColor3 = colors.accent
 title.Font = Enum.Font.GothamBold
-title.TextSize = 20
+title.TextSize = 18
 title.TextXAlignment = Enum.TextXAlignment.Left
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Parent = topBar
-closeBtn.BackgroundColor3 = colors.tertiary
-closeBtn.Size = UDim2.new(0, 28, 0, 28)
-closeBtn.Position = UDim2.new(1, -38, 0.5, -14)
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = colors.text
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 16
 
 -- Abas roláveis
 local tabContainer = Instance.new("Frame")
 tabContainer.Parent = mainFrame
 tabContainer.BackgroundColor3 = colors.secondary
-tabContainer.Size = UDim2.new(1, 0, 0, 40)
-tabContainer.Position = UDim2.new(0, 0, 0, 45)
+tabContainer.Size = UDim2.new(1, 0, 0, 35)
+tabContainer.Position = UDim2.new(0, 0, 0, 40)
 tabContainer.ClipsDescendants = true
 
 local tabScrolling = Instance.new("ScrollingFrame")
@@ -385,27 +437,27 @@ local function createTab(name, pos)
     local btn = Instance.new("TextButton")
     btn.Parent = tabScrolling
     btn.BackgroundColor3 = colors.background
-    btn.Size = UDim2.new(0, 80, 0, 30)
-    btn.Position = UDim2.new(0, pos, 0.5, -15)
+    btn.Size = UDim2.new(0, 70, 0, 25)
+    btn.Position = UDim2.new(0, pos, 0.5, -12.5)
     btn.Text = name
     btn.TextColor3 = colors.textDim
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
     return btn
 end
 
 local tab1 = createTab("MUNDO", 10)
-local tab2 = createTab("STARS", 100)
-local tab3 = createTab("MOBS", 190)
-local tab4 = createTab("UNITS", 280)
-local tab5 = createTab("BYPASS", 370)
+local tab2 = createTab("STARS", 90)
+local tab3 = createTab("MOBS", 170)
+local tab4 = createTab("UNITS", 250)
+local tab5 = createTab("BYPASS", 330)
 
 local pageIndicator = Instance.new("Frame")
 pageIndicator.Parent = tabScrolling
 pageIndicator.BackgroundColor3 = colors.accent
-pageIndicator.Size = UDim2.new(0, 60, 0, 2)
+pageIndicator.Size = UDim2.new(0, 50, 0, 2)
 pageIndicator.Position = UDim2.new(0, 20, 1, -5)
 pageIndicator.BorderSizePixel = 0
 
@@ -413,22 +465,21 @@ pageIndicator.BorderSizePixel = 0
 local content = Instance.new("ScrollingFrame")
 content.Parent = mainFrame
 content.BackgroundColor3 = colors.background
-content.Size = UDim2.new(1, -20, 1, -105)
-content.Position = UDim2.new(0, 10, 0, 95)
+content.Size = UDim2.new(1, -20, 1, -95)
+content.Position = UDim2.new(0, 10, 0, 85)
 content.CanvasSize = UDim2.new(0, 0, 2, 0)
 content.ScrollBarThickness = 4
 content.BorderSizePixel = 0
 
 local contentCorner = Instance.new("UICorner")
-contentCorner.CornerRadius = UDim.new(0, 10)
+contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = content
 
--- ================ PÁGINA 1: MUNDO ================
-
+-- PÁGINA 1: MUNDO (altura reduzida)
 local page1 = Instance.new("Frame")
 page1.Parent = content
 page1.BackgroundTransparency = 1
-page1.Size = UDim2.new(1, 0, 0, 300)
+page1.Size = UDim2.new(1, 0, 0, 250)
 page1.Position = UDim2.new(0, 0, 0, 0)
 page1.Visible = true
 
@@ -550,12 +601,11 @@ goldValue.Font = Enum.Font.GothamBold
 goldValue.TextSize = 15
 goldValue.TextXAlignment = Enum.TextXAlignment.Left
 
--- ================ PÁGINA 2: STARS ================
-
+-- PÁGINA 2: STARS (com debug)
 local page2 = Instance.new("Frame")
 page2.Parent = content
 page2.BackgroundTransparency = 1
-page2.Size = UDim2.new(1, 0, 0, 350)
+page2.Size = UDim2.new(1, 0, 0, 300)
 page2.Position = UDim2.new(0, 0, 0, 0)
 page2.Visible = false
 
@@ -573,7 +623,7 @@ starsTitle.TextXAlignment = Enum.TextXAlignment.Left
 local starsList = Instance.new("TextLabel")
 starsList.Parent = page2
 starsList.BackgroundColor3 = colors.secondary
-starsList.Size = UDim2.new(0, 360, 0, 150)
+starsList.Size = UDim2.new(0, 360, 0, 120)
 starsList.Position = UDim2.new(0.5, -180, 0, 40)
 starsList.Text = "Aguardando...\nEntre no Leaf World"
 starsList.TextColor3 = colors.textDim
@@ -591,7 +641,7 @@ local refreshStarsBtn = Instance.new("TextButton")
 refreshStarsBtn.Parent = page2
 refreshStarsBtn.BackgroundColor3 = colors.tertiary
 refreshStarsBtn.Size = UDim2.new(0, 100, 0, 30)
-refreshStarsBtn.Position = UDim2.new(0.5, -160, 0, 200)
+refreshStarsBtn.Position = UDim2.new(0.5, -160, 0, 170)
 refreshStarsBtn.Text = "🔄 ATUALIZAR"
 refreshStarsBtn.TextColor3 = colors.text
 refreshStarsBtn.Font = Enum.Font.GothamBold
@@ -605,7 +655,7 @@ local spinStarBtn = Instance.new("TextButton")
 spinStarBtn.Parent = page2
 spinStarBtn.BackgroundColor3 = colors.tertiary
 spinStarBtn.Size = UDim2.new(0, 100, 0, 30)
-spinStarBtn.Position = UDim2.new(0.5, -50, 0, 200)
+spinStarBtn.Position = UDim2.new(0.5, -50, 0, 170)
 spinStarBtn.Text = "🎯 GIRAR #1"
 spinStarBtn.TextColor3 = colors.text
 spinStarBtn.Font = Enum.Font.GothamBold
@@ -619,7 +669,7 @@ local autoSpinBtn = Instance.new("TextButton")
 autoSpinBtn.Parent = page2
 autoSpinBtn.BackgroundColor3 = colors.tertiary
 autoSpinBtn.Size = UDim2.new(0, 100, 0, 30)
-autoSpinBtn.Position = UDim2.new(0.5, 60, 0, 200)
+autoSpinBtn.Position = UDim2.new(0.5, 60, 0, 170)
 autoSpinBtn.Text = "⚡ AUTO SPIN"
 autoSpinBtn.TextColor3 = colors.text
 autoSpinBtn.Font = Enum.Font.GothamBold
@@ -629,13 +679,11 @@ local autoCorner = Instance.new("UICorner")
 autoCorner.CornerRadius = UDim.new(0, 6)
 autoCorner.Parent = autoSpinBtn
 
-
--- ================ PÁGINA 3: MOBS (COM INDICADOR) ================
-
+-- PÁGINA 3: MOBS (com indicador)
 local page3 = Instance.new("Frame")
 page3.Parent = content
 page3.BackgroundTransparency = 1
-page3.Size = UDim2.new(1, 0, 0, 500)
+page3.Size = UDim2.new(1, 0, 0, 450)
 page3.Position = UDim2.new(0, 0, 0, 0)
 page3.Visible = false
 
@@ -650,11 +698,10 @@ mobsTitle.Font = Enum.Font.GothamBold
 mobsTitle.TextSize = 18
 mobsTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- Lista de Mobs
 local mobsScrolling = Instance.new("ScrollingFrame")
 mobsScrolling.Parent = page3
 mobsScrolling.BackgroundColor3 = colors.secondary
-mobsScrolling.Size = UDim2.new(0, 360, 0, 200)
+mobsScrolling.Size = UDim2.new(0, 360, 0, 180)
 mobsScrolling.Position = UDim2.new(0.5, -180, 0, 40)
 mobsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
 mobsScrolling.ScrollBarThickness = 4
@@ -679,7 +726,7 @@ local function createMobButton(mob, index)
     btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = btn
     
-    -- Indicador de seleção (bolinha)
+    -- Indicador de seleção
     local selectIndicator = Instance.new("Frame")
     selectIndicator.Parent = btn
     selectIndicator.BackgroundColor3 = colors.textDim
@@ -731,7 +778,6 @@ local function createMobButton(mob, index)
     healthLabel.TextSize = 12
     
     btn.MouseButton1Click:Connect(function()
-        -- Resetar todos os indicadores
         for _, child in ipairs(mobsScrolling:GetChildren()) do
             if child:IsA("TextButton") then
                 local ind = child:FindFirstChildOfClass("Frame")
@@ -740,11 +786,9 @@ local function createMobButton(mob, index)
                 end
             end
         end
-        -- Destacar este
         selectIndicator.BackgroundColor3 = colors.selected
         selectedMob = mob
-        local healthText = health .. " HP"
-        selectedMobText.Text = "✅ " .. mob.Name .. " [" .. healthText .. "]"
+        selectedMobText.Text = "✅ " .. mob.Name .. " [" .. health .. " HP]"
         selectedMobText.TextColor3 = colors.selected
     end)
 end
@@ -753,7 +797,7 @@ local selectedMobFrame = Instance.new("Frame")
 selectedMobFrame.Parent = page3
 selectedMobFrame.BackgroundColor3 = colors.tertiary
 selectedMobFrame.Size = UDim2.new(0, 360, 0, 35)
-selectedMobFrame.Position = UDim2.new(0.5, -180, 0, 250)
+selectedMobFrame.Position = UDim2.new(0.5, -180, 0, 230)
 selectedMobFrame.BorderSizePixel = 0
 
 local selectedCorner = Instance.new("UICorner")
@@ -771,12 +815,11 @@ selectedMobText.Font = Enum.Font.Gotham
 selectedMobText.TextSize = 12
 selectedMobText.TextXAlignment = Enum.TextXAlignment.Left
 
--- Botões de ação
 local killMobBtn = Instance.new("TextButton")
 killMobBtn.Parent = page3
 killMobBtn.BackgroundColor3 = colors.danger
 killMobBtn.Size = UDim2.new(0, 160, 0, 35)
-killMobBtn.Position = UDim2.new(0.5, -170, 0, 295)
+killMobBtn.Position = UDim2.new(0.5, -170, 0, 275)
 killMobBtn.Text = "💀 KILL"
 killMobBtn.TextColor3 = colors.text
 killMobBtn.Font = Enum.Font.GothamBold
@@ -790,7 +833,7 @@ local autoKillBtn = Instance.new("TextButton")
 autoKillBtn.Parent = page3
 autoKillBtn.BackgroundColor3 = colors.tertiary
 autoKillBtn.Size = UDim2.new(0, 160, 0, 35)
-autoKillBtn.Position = UDim2.new(0.5, 10, 0, 295)
+autoKillBtn.Position = UDim2.new(0.5, 10, 0, 275)
 autoKillBtn.Text = "⚔️ AUTO KILL"
 autoKillBtn.TextColor3 = colors.text
 autoKillBtn.Font = Enum.Font.GothamBold
@@ -804,7 +847,7 @@ local refreshMobsBtn = Instance.new("TextButton")
 refreshMobsBtn.Parent = page3
 refreshMobsBtn.BackgroundColor3 = colors.tertiary
 refreshMobsBtn.Size = UDim2.new(0, 330, 0, 30)
-refreshMobsBtn.Position = UDim2.new(0.5, -165, 0, 340)
+refreshMobsBtn.Position = UDim2.new(0.5, -165, 0, 320)
 refreshMobsBtn.Text = "🔄 ATUALIZAR MOBS"
 refreshMobsBtn.TextColor3 = colors.text
 refreshMobsBtn.Font = Enum.Font.GothamBold
@@ -814,12 +857,11 @@ local refreshMobsCorner = Instance.new("UICorner")
 refreshMobsCorner.CornerRadius = UDim.new(0, 6)
 refreshMobsCorner.Parent = refreshMobsBtn
 
--- ================ PÁGINA 4: UNITS ================
-
+-- PÁGINA 4: UNITS
 local page4 = Instance.new("Frame")
 page4.Parent = content
 page4.BackgroundTransparency = 1
-page4.Size = UDim2.new(1, 0, 0, 500)
+page4.Size = UDim2.new(1, 0, 0, 450)
 page4.Position = UDim2.new(0, 0, 0, 0)
 page4.Visible = false
 
@@ -944,12 +986,11 @@ refreshUnitsCorner.Parent = refreshUnitsBtn
 
 refreshUnitsBtn.MouseButton1Click:Connect(updateUnitsList)
 
--- ================ PÁGINA 5: BYPASS ================
-
+-- PÁGINA 5: BYPASS
 local page5 = Instance.new("Frame")
 page5.Parent = content
 page5.BackgroundTransparency = 1
-page5.Size = UDim2.new(1, 0, 0, 200)
+page5.Size = UDim2.new(1, 0, 0, 150)
 page5.Position = UDim2.new(0, 0, 0, 0)
 page5.Visible = false
 
@@ -967,7 +1008,7 @@ bypassTitle.TextXAlignment = Enum.TextXAlignment.Left
 local bypassCard = Instance.new("Frame")
 bypassCard.Parent = page5
 bypassCard.BackgroundColor3 = colors.secondary
-bypassCard.Size = UDim2.new(0, 360, 0, 120)
+bypassCard.Size = UDim2.new(0, 360, 0, 80)
 bypassCard.Position = UDim2.new(0.5, -180, 0, 40)
 bypassCard.BorderSizePixel = 0
 
@@ -978,19 +1019,19 @@ bypassCardCorner.Parent = bypassCard
 local bypassInfo = Instance.new("TextLabel")
 bypassInfo.Parent = bypassCard
 bypassInfo.BackgroundTransparency = 1
-bypassInfo.Size = UDim2.new(1, -20, 0, 60)
+bypassInfo.Size = UDim2.new(1, -20, 0, 30)
 bypassInfo.Position = UDim2.new(0, 10, 0, 5)
-bypassInfo.Text = "✓ Bloqueia detecção\n✓ Proteção contra kick\n✓ Desativa remotes"
+bypassInfo.Text = "✓ Bloqueia detecção | Proteção contra kick"
 bypassInfo.TextColor3 = colors.textDim
 bypassInfo.Font = Enum.Font.Gotham
-bypassInfo.TextSize = 12
+bypassInfo.TextSize = 11
 bypassInfo.TextXAlignment = Enum.TextXAlignment.Left
 
 local bypassToggleBtn = Instance.new("TextButton")
 bypassToggleBtn.Parent = bypassCard
 bypassToggleBtn.BackgroundColor3 = colors.tertiary
 bypassToggleBtn.Size = UDim2.new(0, 150, 0, 30)
-bypassToggleBtn.Position = UDim2.new(0.5, -75, 0, 75)
+bypassToggleBtn.Position = UDim2.new(0.5, -75, 0, 45)
 bypassToggleBtn.Text = "ATIVAR BYPASS"
 bypassToggleBtn.TextColor3 = colors.text
 bypassToggleBtn.Font = Enum.Font.GothamBold
@@ -1004,7 +1045,7 @@ local bypassStatus = Instance.new("TextLabel")
 bypassStatus.Parent = page5
 bypassStatus.BackgroundColor3 = colors.tertiary
 bypassStatus.Size = UDim2.new(0, 200, 0, 25)
-bypassStatus.Position = UDim2.new(0.5, -100, 0, 170)
+bypassStatus.Position = UDim2.new(0.5, -100, 0, 120)
 bypassStatus.Text = "Status: Inativo"
 bypassStatus.TextColor3 = colors.textDim
 bypassStatus.Font = Enum.Font.Gotham
@@ -1023,7 +1064,7 @@ local function switchPage(page)
     page4.Visible = (page == 4)
     page5.Visible = (page == 5)
 
-    local positions = {20, 110, 200, 290, 380}
+    local positions = {20, 100, 180, 260, 340}
     tweenService:Create(pageIndicator, TweenInfo.new(0.3), {
         Position = UDim2.new(0, positions[page], 1, -5)
     }):Play()
@@ -1033,12 +1074,11 @@ local function switchPage(page)
         tabs[i].TextColor3 = (i == page) and colors.accent or colors.textDim
     end
     
-    -- Ajustar canvas size do content para a página
-    local pageHeight = 400 -- padrão
-    if page == 3 then pageHeight = 500
-    elseif page == 4 then pageHeight = 500
-    elseif page == 2 then pageHeight = 350
-    elseif page == 5 then pageHeight = 200
+    local pageHeight = 300
+    if page == 2 then pageHeight = 300
+    elseif page == 3 then pageHeight = 450
+    elseif page == 4 then pageHeight = 450
+    elseif page == 5 then pageHeight = 150
     end
     content.CanvasSize = UDim2.new(0, 0, 0, pageHeight)
 end
@@ -1048,6 +1088,12 @@ tab2.MouseButton1Click:Connect(function() switchPage(2) end)
 tab3.MouseButton1Click:Connect(function() switchPage(3) end)
 tab4.MouseButton1Click:Connect(function() switchPage(4) end)
 tab5.MouseButton1Click:Connect(function() switchPage(5) end)
+
+-- Botão toggle
+toggleBtn.MouseButton1Click:Connect(function()
+    hubVisible = not hubVisible
+    mainFrame.Visible = hubVisible
+end)
 
 -- ================ FUNÇÕES DOS BOTÕES ================
 
@@ -1070,7 +1116,7 @@ local function updateStarsList()
     stars = findStars()
     local text = "STARS: " .. #stars .. "/6\n\n"
     if #stars == 0 then
-        text = text .. "Nenhuma Star encontrada."
+        text = text .. "Nenhuma Star encontrada.\nUse o botão DEBUG no console."
     else
         for i, star in ipairs(stars) do
             local dist = "?"
@@ -1147,10 +1193,6 @@ bypassToggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
 -- Atualizações automáticas
 task.spawn(function()
     while true do
@@ -1181,4 +1223,5 @@ updateMobsList()
 updateUnitsList()
 switchPage(1)
 
-print("✅ Stelk Hub v10.0 - Mobile Optimized carregado!")
+print("✅ Stelk Hub v11.0 - Final Edition carregado!")
+print("📌 Botão toggle no canto | Movimento suave anti-kick")
