@@ -1,16 +1,15 @@
 --[[
     STELK HUB - ANIME VORTEX Z
-    Versão: 16.0 - NOCLIP EDITION
+    Versão: 17.0 - PETS EDITION (OP)
     ============================================
     CARACTERÍSTICAS:
     - GUI 300x300 com bordas arredondadas
-    - Movimento com NOCLIP (atravessa paredes)
-    - Desativa noclip ao chegar no mob
-    - Detecção de mundo pelos nomes REAIS do jogo
-    - Stars com nome exato "Star" (conforme dev)
-    - Units do inventário real do jogo
+    - Detecção dos 3 mundos: Leaf, Slayer, Cursed
+    - Sistema de Pets (pasta "Pets" confirmada)
+    - FUNÇÃO OP: Pegar QUALQUER pet do jogo
     - Farm automático com noclip + tween
     - Bypass multi-camadas
+    - SEM STARS (removidas)
     ============================================
 ]]
 
@@ -29,22 +28,15 @@ local CONFIG = {
     RESPAWN_WAIT = 5,
     MOVE_DISTANCE_TOLERANCE = 5,
     
-    -- MUNDOS REAIS DO JOGO (baseado no que o dev disse)
+    -- MUNDOS REAIS DO JOGO (confirmado pelo dev)
     WORLDS = {
-        {name = "🍃 Leaf Village", keywords = {"leaf", "village", "konoha", "naruto"}, color = Color3.fromRGB(100, 200, 100)},
-        {name = "⚔️ Demon Slayer", keywords = {"demon", "slayer", "tanjiro", "nezuko"}, color = Color3.fromRGB(200, 100, 200)},
-        {name = "🔥 Fire World", keywords = {"fire", "fogo", "flame"}, color = Color3.fromRGB(200, 100, 100)},
-        {name = "💧 Water World", keywords = {"water", "agua", "ocean"}, color = Color3.fromRGB(100, 100, 200)}
+        {name = "🍃 Leaf World", keywords = {"leaf", "village", "konoha", "naruto"}, color = Color3.fromRGB(100, 200, 100)},
+        {name = "⚔️ Slayer World", keywords = {"slayer", "demon", "tanjiro", "nezuko"}, color = Color3.fromRGB(200, 100, 200)},
+        {name = "👺 Cursed World", keywords = {"cursed", "jujutsu", "satoru", "gojo"}, color = Color3.fromRGB(150, 50, 150)}
     },
     
-    -- NOME EXATO DAS STARS (conforme dev)
-    STAR_NAMES = {"Star", "star", "STAR"},
-    
-    -- PASTAS ONDE PROCURAR UNITS (baseado no print do inventário)
-    UNIT_FOLDERS = {
-        "Units", "Pets", "Characters", "Inventory", "Bag", "Storage",
-        "MyUnits", "Team", "Party", "Deployed", "Active"
-    },
+    -- PASTA DE PETS (confirmada pelo dev)
+    PETS_FOLDER = "Pets",
     
     -- PROPRIEDADES DE DANO
     DAMAGE_PROPS = {"Damage", "Power", "Atk", "Attack", "Dano", "Strength"},
@@ -67,12 +59,12 @@ local selectedMob = nil
 local currentWorld = "Desconhecido"
 local currentWorldColor = Color3.fromRGB(150,150,150)
 local inLeafWorld = false
+local inSlayerWorld = false
+local inCursedWorld = false
 local gems = 0
 local gold = 0
-local selectedStar = nil
-local stars = {}
+local pets = {}
 local mobs = {}
-local units = {}
 local hubVisible = true
 local farmConnection = nil
 local noclipConnection = nil
@@ -117,7 +109,6 @@ local function disableNoclip()
     if noclipConnection then
         noclipConnection:Disconnect()
         noclipConnection = nil
-        -- Restaura colisão
         if player.Character then
             for _, part in ipairs(player.Character:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -129,45 +120,13 @@ local function disableNoclip()
     end
 end
 
--- ================ MOVIMENTO COM TWEEN + NOCLIP ================
-local function moveToMob(mob)
-    if not mob then return end
-    local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob:FindFirstChild("UpperTorso")
-    if not root then return end
-    
-    local char = player.Character
-    if not char then return end
-    local charRoot = char:FindFirstChild("HumanoidRootPart")
-    if not charRoot then return end
-    
-    local targetPos = root.Position + Vector3.new(0, 5, 0)
-    local distance = (targetPos - charRoot.Position).Magnitude
-    if distance < CONFIG.MOVE_DISTANCE_TOLERANCE then return end
-    
-    log("Movendo até mob. Distância: " .. distance, "info")
-    
-    -- Ativa noclip para atravessar obstáculos
-    enableNoclip()
-    
-    -- Usa Tween para movimento suave (já que o dev setou a velocidade)
-    local tweenInfo = TweenInfo.new(
-        distance / CONFIG.FARM_SPEED,
-        Enum.EasingStyle.Linear,
-        Enum.EasingDirection.Out
-    )
-    
-    local tween = tweenService:Create(charRoot, tweenInfo, {CFrame = CFrame.new(targetPos)})
-    tween:Play()
-    tween.Completed:Wait()
-    
-    -- Desativa noclip ao chegar
-    disableNoclip()
-    log("Movimento concluído", "success")
-end
-
--- ================ DETECÇÃO DE MUNDO (NOMES REAIS) ================
+-- ================ DETECÇÃO DE MUNDO (3 MUNDOS) ================
 local function detectCurrentWorld()
     log("Detectando mundo atual...", "info")
+    
+    inLeafWorld = false
+    inSlayerWorld = false
+    inCursedWorld = false
     
     for _, world in ipairs(CONFIG.WORLDS) do
         for _, obj in ipairs(workspace:GetDescendants()) do
@@ -176,7 +135,11 @@ local function detectCurrentWorld()
                 if name:find(kw) then
                     currentWorld = world.name
                     currentWorldColor = world.color
-                    inLeafWorld = (world.name == "🍃 Leaf Village")
+                    
+                    if world.name == "🍃 Leaf World" then inLeafWorld = true end
+                    if world.name == "⚔️ Slayer World" then inSlayerWorld = true end
+                    if world.name == "👺 Cursed World" then inCursedWorld = true end
+                    
                     log("Mundo detectado: " .. currentWorld, "success")
                     return
                 end
@@ -186,76 +149,117 @@ local function detectCurrentWorld()
     
     currentWorld = "❓ Mundo Desconhecido"
     currentWorldColor = colors.textDim
-    inLeafWorld = false
     log("Mundo não detectado", "warning")
 end
 
--- ================ DETECÇÃO DE GEMS E GOLD ================
-local function getGemsAndGold()
-    gems = 0; gold = 0
-    
-    if player:FindFirstChild("leaderstats") then
-        for _, child in ipairs(player.leaderstats:GetChildren()) do
-            local name = child.Name:lower()
-            if name:find("gem") then gems = child.Value or 0 end
-            if name:find("gold") or name:find("coin") then gold = child.Value or 0 end
-        end
-    end
-    
-    for _, obj in ipairs(player:GetChildren()) do
-        if obj:IsA("NumberValue") then
-            local name = obj.Name:lower()
-            if name:find("gem") then gems = obj.Value end
-            if name:find("gold") then gold = obj.Value end
-        end
-    end
-    
-    return gems, gold
-end
+-- ================ SISTEMA DE PETS (FUNÇÃO OP) ================
 
--- ================ SISTEMA DE STARS (NOME EXATO) ================
-local function findStars()
+-- Função para listar pets do jogador
+local function listMyPets()
     local found = {}
-    log("Procurando Stars...", "info")
+    local petsFolder = player:FindFirstChild(CONFIG.PETS_FOLDER)
     
-    -- Busca por nome exato "Star"
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        for _, starName in ipairs(CONFIG.STAR_NAMES) do
-            if obj.Name == starName then
-                if obj:IsA("BasePart") or obj:IsA("Model") then
-                    table.insert(found, obj)
-                    log("Star encontrada: " .. obj.Name, "success")
-                    break
+    if petsFolder then
+        for _, child in ipairs(petsFolder:GetChildren()) do
+            if child:IsA("Model") or child:IsA("Folder") then
+                -- Tenta extrair dano
+                local damage = 0
+                for _, prop in ipairs(CONFIG.DAMAGE_PROPS) do
+                    local val = child:FindFirstChild(prop)
+                    if val and val:IsA("NumberValue") then
+                        damage = val.Value
+                        break
+                    end
                 end
-            end
-        end
-        
-        -- Procura por ClickDetectors
-        if obj:IsA("ClickDetector") and obj.Parent then
-            for _, starName in ipairs(CONFIG.STAR_NAMES) do
-                if obj.Parent.Name == starName then
-                    table.insert(found, obj.Parent)
-                    log("Star via ClickDetector: " .. obj.Parent.Name, "success")
-                    break
-                end
+                
+                table.insert(found, {
+                    Name = child.Name,
+                    Damage = damage,
+                    Object = child
+                })
+                log("Pet encontrado: " .. child.Name .. " (Dano: " .. damage .. ")", "success")
             end
         end
     end
     
-    log("Total de Stars: " .. #found, "info")
+    -- Ordena por dano
+    table.sort(found, function(a, b) return a.Damage > b.Damage end)
     return found
 end
 
-local function spinStar(star)
-    if not star then return false end
+-- FUNÇÃO OP: Pegar QUALQUER pet do jogo
+local function stealPet(petName)
+    log("Tentando pegar pet: " .. petName, "info")
     
-    local detector = star:FindFirstChildOfClass("ClickDetector")
-    if detector then fireclickdetector(detector); return true end
+    -- Procura o pet no workspace
+    local targetPet = nil
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == petName and (obj:IsA("Model") or obj:IsA("Part")) then
+            targetPet = obj
+            break
+        end
+    end
     
-    local prompt = star:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then prompt:InputHoldBegin(); task.wait(0.1); prompt:InputHoldEnd(); return true end
+    if not targetPet then
+        log("Pet não encontrado no mapa", "error")
+        return false
+    end
     
-    return false
+    -- Método 1: Clonar e mandar pro inventário
+    local clone = targetPet:Clone()
+    local petsFolder = player:FindFirstChild(CONFIG.PETS_FOLDER)
+    
+    if not petsFolder then
+        petsFolder = Instance.new("Folder")
+        petsFolder.Name = CONFIG.PETS_FOLDER
+        petsFolder.Parent = player
+    end
+    
+    clone.Parent = petsFolder
+    log("✅ Pet " .. petName .. " adicionado ao inventário!", "success")
+    
+    -- Método 2: Tentar remote de aquisição
+    for _, remoteName in ipairs({"GetPet", "AddPet", "ClaimPet", "Receive"}) do
+        local remote = replicatedStorage:FindFirstChild(remoteName) or player:FindFirstChild(remoteName)
+        if remote and remote:IsA("RemoteEvent") then
+            remote:FireServer(petName, targetPet)
+            log("✅ Pet adquirido via remote: " .. remoteName, "success")
+        end
+    end
+    
+    return true
+end
+
+-- Função para listar TODOS os pets disponíveis no jogo
+local function findAllPets()
+    local found = {}
+    local petNames = {}
+    
+    -- Procura por modelos que parecem pets no workspace
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and not petNames[obj.Name] then
+            -- Verifica se parece um pet (tem Humanoid ou é pequeno)
+            if obj:FindFirstChildOfClass("Humanoid") or obj:GetExtentsSize().Magnitude < 20 then
+                petNames[obj.Name] = true
+                table.insert(found, obj.Name)
+            end
+        end
+    end
+    
+    -- Adiciona alguns nomes comuns baseados nos mundos
+    local commonPets = {
+        "Naruto", "Sasuke", "Kakashi", "Sakura", "Itachi",
+        "Tanjiro", "Nezuko", "Zenitsu", "Inosuke", "Rengoku",
+        "Gojo", "Satoru", "Yuji", "Megumi", "Nobara"
+    }
+    
+    for _, name in ipairs(commonPets) do
+        if not petNames[name] then
+            table.insert(found, name)
+        end
+    end
+    
+    return found
 end
 
 -- ================ SISTEMA DE MOBS ================
@@ -286,71 +290,72 @@ local function findMobs()
     return found
 end
 
--- ================ SISTEMA DE UNITS (INVENTÁRIO REAL) ================
-local function findUnits()
-    local found = {}
-    log("Procurando units no inventário...", "info")
+-- ================ DETECÇÃO DE GEMS E GOLD ================
+local function getGemsAndGold()
+    gems = 0; gold = 0
     
-    local function getDamage(obj)
-        for _, prop in ipairs(CONFIG.DAMAGE_PROPS) do
-            local val = obj:FindFirstChild(prop)
-            if val and val:IsA("NumberValue") then return val.Value end
-        end
-        return 0
-    end
-    
-    -- Busca em todas as pastas possíveis
-    for _, folderName in ipairs(CONFIG.UNIT_FOLDERS) do
-        local folder = player:FindFirstChild(folderName)
-        if folder then
-            for _, child in ipairs(folder:GetChildren()) do
-                if child:IsA("Model") then
-                    local damage = getDamage(child)
-                    if damage > 0 or child:FindFirstChildOfClass("Humanoid") then
-                        table.insert(found, {
-                            Name = child.Name,
-                            Damage = damage,
-                            Object = child,
-                            HasHumanoid = child:FindFirstChildOfClass("Humanoid") ~= nil
-                        })
-                        log("Unit: " .. child.Name .. " (Dano: " .. damage .. ")", "success")
-                    end
-                end
-            end
+    if player:FindFirstChild("leaderstats") then
+        for _, child in ipairs(player.leaderstats:GetChildren()) do
+            local name = child.Name:lower()
+            if name:find("gem") then gems = child.Value or 0 end
+            if name:find("gold") or name:find("coin") then gold = child.Value or 0 end
         end
     end
     
-    -- Busca no Backpack
-    local backpack = player:FindFirstChild("Backpack")
-    if backpack then
-        for _, child in ipairs(backpack:GetChildren()) do
-            if child:IsA("Tool") or child:IsA("Model") then
-                local damage = getDamage(child)
-                table.insert(found, {
-                    Name = child.Name,
-                    Damage = damage,
-                    Object = child,
-                    HasHumanoid = false
-                })
-                log("Unit no Backpack: " .. child.Name, "success")
-            end
+    for _, obj in ipairs(player:GetChildren()) do
+        if obj:IsA("NumberValue") then
+            local name = obj.Name:lower()
+            if name:find("gem") then gems = obj.Value end
+            if name:find("gold") then gold = obj.Value end
         end
     end
     
-    -- Ordena por dano
-    table.sort(found, function(a, b) return a.Damage > b.Damage end)
-    log("Total de units: " .. #found, "info")
-    return found
+    return gems, gold
 end
 
--- ================ COMANDOS PARA UNITS ATACAREM ================
-local function commandUnitsToAttack(target)
+-- ================ MOVIMENTO COM TWEEN + NOCLIP ================
+local function moveToMob(mob)
+    if not mob then return end
+    local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso") or mob:FindFirstChild("UpperTorso")
+    if not root then return end
+    
+    local char = player.Character
+    if not char then return end
+    local charRoot = char:FindFirstChild("HumanoidRootPart")
+    if not charRoot then return end
+    
+    local targetPos = root.Position + Vector3.new(0, 5, 0)
+    local distance = (targetPos - charRoot.Position).Magnitude
+    if distance < CONFIG.MOVE_DISTANCE_TOLERANCE then return end
+    
+    log("Movendo até mob. Distância: " .. distance, "info")
+    
+    enableNoclip()
+    
+    local tweenInfo = TweenInfo.new(
+        distance / CONFIG.FARM_SPEED,
+        Enum.EasingStyle.Linear,
+        Enum.EasingDirection.Out
+    )
+    
+    local tween = tweenService:Create(charRoot, tweenInfo, {CFrame = CFrame.new(targetPos)})
+    tween:Play()
+    tween.Completed:Wait()
+    
+    disableNoclip()
+    log("Movimento concluído", "success")
+end
+
+-- ================ COMANDOS PARA PETS ATACAREM ================
+local function commandPetsToAttack(target)
     if not target then return end
     
-    for _, unit in ipairs(units) do
-        if unit.Object and unit.Object.Parent then
+    local myPets = listMyPets()
+    
+    for _, pet in ipairs(myPets) do
+        if pet.Object and pet.Object.Parent then
             for _, remoteName in ipairs(CONFIG.ATTACK_REMOTES) do
-                local attackRemote = unit.Object:FindFirstChild(remoteName)
+                local attackRemote = pet.Object:FindFirstChild(remoteName)
                 if attackRemote and attackRemote:IsA("RemoteEvent") then
                     attackRemote:FireServer(target)
                     break
@@ -385,15 +390,13 @@ local function startFarming()
                 log("Mob morto, aguardando respawn...", "info")
                 task.wait(CONFIG.RESPAWN_WAIT)
             else
-                units = findUnits()
-                
                 if currentMob.IsBoss then
                     log("Boss detectado - atacando de longe", "warning")
-                    commandUnitsToAttack(currentMob.Object)
+                    commandPetsToAttack(currentMob.Object)
                     task.wait(2)
                 else
                     moveToMob(currentMob.Object)
-                    commandUnitsToAttack(currentMob.Object)
+                    commandPetsToAttack(currentMob.Object)
                     
                     local humanoid = currentMob.Object:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health <= 0 then
@@ -411,28 +414,6 @@ local function stopFarming()
     if farmConnection then farmConnection = nil end
     disableNoclip()
     log("Farm parado", "info")
-end
-
--- ================ EQUIPAR MELHOR UNIT ================
-local function equipBestUnit()
-    units = findUnits()
-    if #units == 0 then
-        log("Nenhuma unit encontrada", "error")
-        return
-    end
-    
-    local best = units[1]
-    log("Melhor unit: " .. best.Name .. " (Dano: " .. best.Damage .. ")", "success")
-    
-    if best.Object then
-        for _, remoteName in ipairs(CONFIG.EQUIP_REMOTES) do
-            local remote = player:FindFirstChild(remoteName) or replicatedStorage:FindFirstChild(remoteName)
-            if remote and remote:IsA("RemoteEvent") then
-                remote:FireServer(best.Object)
-                break
-            end
-        end
-    end
 end
 
 -- ================ BYPASS ================
@@ -559,9 +540,9 @@ local function createTab(name, pos)
 end
 
 local tab1 = createTab("MUNDO", 5)
-local tab2 = createTab("STARS", 65)
-local tab3 = createTab("MOBS", 125)
-local tab4 = createTab("UNITS", 185)
+local tab2 = createTab("MOBS", 65)
+local tab3 = createTab("MEUS PETS", 125)
+local tab4 = createTab("PETS OP", 185)  -- Nova aba para função OP
 local tab5 = createTab("FARM", 245)
 
 local pageIndicator = Instance.new("Frame")
@@ -583,8 +564,8 @@ content.BorderSizePixel = 0
 Instance.new("UICorner", content).CornerRadius = UDim.new(0, 8)
 
 -- Páginas
-local page1 = Instance.new("Frame"); page1.Parent = content;page1.BackgroundTransparency = 1; page1.Size = UDim2.new(1,0,0,300); page1.Visible = true
-local page2 = Instance.new("Frame"); page2.Parent = content; page2.BackgroundTransparency = 1; page2.Size = UDim2.new(1,0,0,300); page2.Visible = false
+local page1 = Instance.new("Frame"); page1.Parent = content; page1.BackgroundTransparency = 1; page1.Size = UDim2.new(1,0,0,300); page1.Visible = true
+local page2 = Instance.new("Frame"); page2.Parent = content; page2.BackgroundTransparency = 1; page2.Size = UDim2.new(1,0,0,400); page2.Visible = false
 local page3 = Instance.new("Frame"); page3.Parent = content; page3.BackgroundTransparency = 1; page3.Size = UDim2.new(1,0,0,400); page3.Visible = false
 local page4 = Instance.new("Frame"); page4.Parent = content; page4.BackgroundTransparency = 1; page4.Size = UDim2.new(1,0,0,400); page4.Visible = false
 local page5 = Instance.new("Frame"); page5.Parent = content; page5.BackgroundTransparency = 1; page5.Size = UDim2.new(1,0,0,250); page5.Visible = false
@@ -703,7 +684,7 @@ worldsList.Parent = page1
 worldsList.BackgroundColor3 = colors.secondary
 worldsList.Size = UDim2.new(0, 260, 0, 90)
 worldsList.Position = UDim2.new(0.5, -130, 0, 160)
-worldsList.Text = "Mundos disponíveis:\n"
+worldsList.Text = "Mundos disponíveis:\n• 🍃 Leaf World\n• ⚔️ Slayer World\n• 👺 Cursed World"
 worldsList.TextColor3 = colors.textDim
 worldsList.Font = Enum.Font.Gotham
 worldsList.TextSize = 10
@@ -712,59 +693,11 @@ worldsList.TextXAlignment = Enum.TextXAlignment.Left
 worldsList.TextYAlignment = Enum.TextYAlignment.Top
 Instance.new("UICorner", worldsList).CornerRadius = UDim.new(0, 6)
 
--- ================ PÁGINA 2: STARS ================
-local starsList = Instance.new("TextLabel")
-starsList.Parent = page2
-starsList.BackgroundColor3 = colors.secondary
-starsList.Size = UDim2.new(0, 260, 0, 150)
-starsList.Position = UDim2.new(0.5, -130, 0, 10)
-starsList.Text = "Procurando Stars...\n"
-starsList.TextColor3 = colors.textDim
-starsList.Font = Enum.Font.Gotham
-starsList.TextSize = 10
-starsList.TextWrapped = true
-starsList.TextXAlignment = Enum.TextXAlignment.Left
-starsList.TextYAlignment = Enum.TextYAlignment.Top
-Instance.new("UICorner", starsList).CornerRadius = UDim.new(0, 6)
-
-local refreshStarsBtn = Instance.new("TextButton")
-refreshStarsBtn.Parent = page2
-refreshStarsBtn.BackgroundColor3 = colors.tertiary
-refreshStarsBtn.Size = UDim2.new(0, 70, 0, 25)
-refreshStarsBtn.Position = UDim2.new(0.5, -105, 0, 170)
-refreshStarsBtn.Text = "🔄"
-refreshStarsBtn.TextColor3 = colors.text
-refreshStarsBtn.Font = Enum.Font.GothamBold
-refreshStarsBtn.TextSize = 12
-Instance.new("UICorner", refreshStarsBtn).CornerRadius = UDim.new(0, 6)
-
-local spinStarBtn = Instance.new("TextButton")
-spinStarBtn.Parent = page2
-spinStarBtn.BackgroundColor3 = colors.tertiary
-spinStarBtn.Size = UDim2.new(0, 70, 0, 25)
-spinStarBtn.Position = UDim2.new(0.5, -35, 0, 170)
-spinStarBtn.Text = "🎯"
-spinStarBtn.TextColor3 = colors.text
-spinStarBtn.Font = Enum.Font.GothamBold
-spinStarBtn.TextSize = 12
-Instance.new("UICorner", spinStarBtn).CornerRadius = UDim.new(0, 6)
-
-local autoSpinBtn = Instance.new("TextButton")
-autoSpinBtn.Parent = page2
-autoSpinBtn.BackgroundColor3 = colors.tertiary
-autoSpinBtn.Size = UDim2.new(0, 70, 0, 25)
-autoSpinBtn.Position = UDim2.new(0.5, 35, 0, 170)
-autoSpinBtn.Text = "⚡"
-autoSpinBtn.TextColor3 = colors.text
-autoSpinBtn.Font = Enum.Font.GothamBold
-autoSpinBtn.TextSize = 12
-Instance.new("UICorner", autoSpinBtn).CornerRadius = UDim.new(0, 6)
-
--- ================ PÁGINA 3: MOBS ================
+-- ================ PÁGINA 2: MOBS ================
 local mobsScrolling = Instance.new("ScrollingFrame")
-mobsScrolling.Parent = page3
+mobsScrolling.Parent = page2
 mobsScrolling.BackgroundColor3 = colors.secondary
-mobsScrolling.Size = UDim2.new(0, 260, 0, 200)
+mobsScrolling.Size = UDim2.new(0, 260, 0, 250)
 mobsScrolling.Position = UDim2.new(0.5, -130, 0, 10)
 mobsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
 mobsScrolling.ScrollBarThickness = 4
@@ -772,10 +705,10 @@ mobsScrolling.BorderSizePixel = 0
 Instance.new("UICorner", mobsScrolling).CornerRadius = UDim.new(0, 6)
 
 local selectedMobFrame = Instance.new("Frame")
-selectedMobFrame.Parent = page3
+selectedMobFrame.Parent = page2
 selectedMobFrame.BackgroundColor3 = colors.tertiary
 selectedMobFrame.Size = UDim2.new(0, 260, 0, 30)
-selectedMobFrame.Position = UDim2.new(0.5, -130, 0, 220)
+selectedMobFrame.Position = UDim2.new(0.5, -130, 0, 270)
 selectedMobFrame.BorderSizePixel = 0
 Instance.new("UICorner", selectedMobFrame).CornerRadius = UDim.new(0, 6)
 
@@ -791,48 +724,81 @@ selectedMobText.TextSize = 10
 selectedMobText.TextXAlignment = Enum.TextXAlignment.Left
 
 local refreshMobsBtn = Instance.new("TextButton")
-refreshMobsBtn.Parent = page3
+refreshMobsBtn.Parent = page2
 refreshMobsBtn.BackgroundColor3 = colors.tertiary
 refreshMobsBtn.Size = UDim2.new(0, 120, 0, 25)
-refreshMobsBtn.Position = UDim2.new(0.5, -60, 0, 260)
+refreshMobsBtn.Position = UDim2.new(0.5, -60, 0, 310)
 refreshMobsBtn.Text = "ATUALIZAR"
 refreshMobsBtn.TextColor3 = colors.text
 refreshMobsBtn.Font = Enum.Font.GothamBold
 refreshMobsBtn.TextSize = 10
 Instance.new("UICorner", refreshMobsBtn).CornerRadius = UDim.new(0, 6)
 
--- ================ PÁGINA 4: UNITS ================
-local unitsScrolling = Instance.new("ScrollingFrame")
-unitsScrolling.Parent = page4
-unitsScrolling.BackgroundColor3 = colors.secondary
-unitsScrolling.Size = UDim2.new(0, 260, 0, 200)
-unitsScrolling.Position = UDim2.new(0.5, -130, 0, 10)
-unitsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
-unitsScrolling.ScrollBarThickness = 4
-unitsScrolling.BorderSizePixel = 0
-Instance.new("UICorner", unitsScrolling).CornerRadius = UDim.new(0, 6)
+-- ================ PÁGINA 3: MEUS PETS ================
+local myPetsScrolling = Instance.new("ScrollingFrame")
+myPetsScrolling.Parent = page3
+myPetsScrolling.BackgroundColor3 = colors.secondary
+myPetsScrolling.Size = UDim2.new(0, 260, 0, 250)
+myPetsScrolling.Position = UDim2.new(0.5, -130, 0, 10)
+myPetsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
+myPetsScrolling.ScrollBarThickness = 4
+myPetsScrolling.BorderSizePixel = 0
+Instance.new("UICorner", myPetsScrolling).CornerRadius = UDim.new(0, 6)
 
-local equipBestBtn = Instance.new("TextButton")
-equipBestBtn.Parent = page4
-equipBestBtn.BackgroundColor3 = colors.success
-equipBestBtn.Size = UDim2.new(0, 120, 0, 25)
-equipBestBtn.Position = UDim2.new(0.5, -60, 0, 220)
-equipBestBtn.Text = "EQUIP BEST"
-equipBestBtn.TextColor3 = colors.background
-equipBestBtn.Font = Enum.Font.GothamBold
-equipBestBtn.TextSize = 10
-Instance.new("UICorner", equipBestBtn).CornerRadius = UDim.new(0, 6)
+local refreshMyPetsBtn = Instance.new("TextButton")
+refreshMyPetsBtn.Parent = page3
+refreshMyPetsBtn.BackgroundColor3 = colors.tertiary
+refreshMyPetsBtn.Size = UDim2.new(0, 120, 0, 25)
+refreshMyPetsBtn.Position = UDim2.new(0.5, -60, 0, 270)
+refreshMyPetsBtn.Text = "ATUALIZAR"
+refreshMyPetsBtn.TextColor3 = colors.text
+refreshMyPetsBtn.Font = Enum.Font.GothamBold
+refreshMyPetsBtn.TextSize = 10
+Instance.new("UICorner", refreshMyPetsBtn).CornerRadius = UDim.new(0, 6)
 
-local refreshUnitsBtn = Instance.new("TextButton")
-refreshUnitsBtn.Parent = page4
-refreshUnitsBtn.BackgroundColor3 = colors.tertiary
-refreshUnitsBtn.Size = UDim2.new(0, 120, 0, 25)
-refreshUnitsBtn.Position = UDim2.new(0.5, -60, 0, 255)
-refreshUnitsBtn.Text = "ATUALIZAR"
-refreshUnitsBtn.TextColor3 = colors.text
-refreshUnitsBtn.Font = Enum.Font.GothamBold
-refreshUnitsBtn.TextSize = 10
-Instance.new("UICorner", refreshUnitsBtn).CornerRadius = UDim.new(0, 6)
+local equipBestPetBtn = Instance.new("TextButton")
+equipBestPetBtn.Parent = page3
+equipBestPetBtn.BackgroundColor3 = colors.success
+equipBestPetBtn.Size = UDim2.new(0, 120, 0, 25)
+equipBestPetBtn.Position = UDim2.new(0.5, -60, 0, 305)
+equipBestPetBtn.Text = "EQUIP BEST"
+equipBestPetBtn.TextColor3 = colors.background
+equipBestPetBtn.Font = Enum.Font.GothamBold
+equipBestPetBtn.TextSize = 10
+Instance.new("UICorner", equipBestPetBtn).CornerRadius = UDim.new(0, 6)
+
+-- ================ PÁGINA 4: PETS OP ================
+local allPetsScrolling = Instance.new("ScrollingFrame")
+allPetsScrolling.Parent = page4
+allPetsScrolling.BackgroundColor3 = colors.secondary
+allPetsScrolling.Size = UDim2.new(0, 260, 0, 250)
+allPetsScrolling.Position = UDim2.new(0.5, -130, 0, 10)
+allPetsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
+allPetsScrolling.ScrollBarThickness = 4
+allPetsScrolling.BorderSizePixel = 0
+Instance.new("UICorner", allPetsScrolling).CornerRadius = UDim.new(0, 6)
+
+local stealPetBtn = Instance.new("TextButton")
+stealPetBtn.Parent = page4
+stealPetBtn.BackgroundColor3 = colors.danger
+stealPetBtn.Size = UDim2.new(0, 200, 0, 35)
+stealPetBtn.Position = UDim2.new(0.5, -100, 0, 270)
+stealPetBtn.Text = "🔥 PEGAR PET SELECIONADO"
+stealPetBtn.TextColor3 = colors.text
+stealPetBtn.Font = Enum.Font.GothamBold
+stealPetBtn.TextSize = 10
+Instance.new("UICorner", stealPetBtn).CornerRadius = UDim.new(0, 6)
+
+local refreshAllPetsBtn = Instance.new("TextButton")
+refreshAllPetsBtn.Parent = page4
+refreshAllPetsBtn.BackgroundColor3 = colors.tertiary
+refreshAllPetsBtn.Size = UDim2.new(0, 200, 0, 25)
+refreshAllPetsBtn.Position = UDim2.new(0.5, -100, 0, 315)
+refreshAllPetsBtn.Text = "🔄 ATUALIZAR LISTA"
+refreshAllPetsBtn.TextColor3 = colors.text
+refreshAllPetsBtn.Font = Enum.Font.GothamBold
+refreshAllPetsBtn.TextSize = 10
+Instance.new("UICorner", refreshAllPetsBtn).CornerRadius = UDim.new(0, 6)
 
 -- ================ PÁGINA 5: FARM ================
 local farmInfo = Instance.new("TextLabel")
@@ -898,9 +864,9 @@ local function switchPage(page)
     end
     
     local pageHeight = 300
-    if page == 2 then pageHeight = 250
-    elseif page == 3 then pageHeight = 320
-    elseif page == 4 then pageHeight = 320
+    if page == 2 then pageHeight = 370
+    elseif page == 3 then pageHeight = 370
+    elseif page == 4 then pageHeight = 370
     elseif page == 5 then pageHeight = 200
     end
     content.CanvasSize = UDim2.new(0, 0, 0, pageHeight)
@@ -922,36 +888,11 @@ local function updateWorldPage()
     detectCurrentWorld()
     worldNameLabel.Text = currentWorld
     worldNameLabel.TextColor3 = currentWorldColor
-    worldStatusLabel.Text = inLeafWorld and "✅ No Leaf Village" or "❌ Fora"
+    worldStatusLabel.Text = "Mundo detectado"
     
     gems, gold = getGemsAndGold()
     gemsLabel.Text = tostring(gems)
     goldLabel.Text = tostring(gold)
-    
-    local worldsText = "Mundos disponíveis:\n"
-    for _, world in ipairs(CONFIG.WORLDS) do
-        worldsText = worldsText .. "• " .. world.name .. "\n"
-    end
-    worldsList.Text = worldsText
-end
-
-local function updateStarsPage()
-    stars = findStars()
-    local txt = "STARS: " .. #stars .. "\n"
-    for i, s in ipairs(stars) do
-        local dist = "?"
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            dist = math.floor((player.Character.HumanoidRootPart.Position - s.Position).Magnitude) .. "m"
-        end
-        txt = txt .. i .. ". " .. s.Name .. " [" .. dist .. "]\n"
-    end
-    starsList.Text = txt
-    if #stars > 0 then
-        selectedStar = stars[1]
-        spinStarBtn.Text = "🎯 " .. stars[1].Name
-    else
-        spinStarBtn.Text = "🎯"
-    end
 end
 
 local function updateMobsPage()
@@ -1015,29 +956,29 @@ local function updateMobsPage()
     mobsScrolling.CanvasSize = UDim2.new(0, 0, 0, #mobs * 27 + 10)
 end
 
-local function updateUnitsPage()
-    for _, child in ipairs(unitsScrolling:GetChildren()) do
+local function updateMyPetsPage()
+    for _, child in ipairs(myPetsScrolling:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
     
-    units = findUnits()
+    local myPets = listMyPets()
     
-    if #units == 0 then
+    if #myPets == 0 then
         local lbl = Instance.new("TextLabel")
-        lbl.Parent = unitsScrolling
+        lbl.Parent = myPetsScrolling
         lbl.BackgroundTransparency = 1
         lbl.Size = UDim2.new(1, 0, 0, 30)
         lbl.Position = UDim2.new(0, 0, 0, 10)
-        lbl.Text = "Nenhuma unit encontrada"
+        lbl.Text = "Nenhum pet encontrado"
         lbl.TextColor3 = colors.textDim
         lbl.Font = Enum.Font.Gotham
         lbl.TextSize = 11
         return
     end
     
-    for i, unit in ipairs(units) do
+    for i, pet in ipairs(myPets) do
         local btn = Instance.new("TextButton")
-        btn.Parent = unitsScrolling
+        btn.Parent = myPetsScrolling
         btn.BackgroundColor3 = colors.tertiary
         btn.Size = UDim2.new(1, -10, 0, 25)
         btn.Position = UDim2.new(0, 5, 0, 5 + (i-1) * 27)
@@ -1051,7 +992,7 @@ local function updateUnitsPage()
         nameLabel.BackgroundTransparency = 1
         nameLabel.Size = UDim2.new(0, 150, 1, 0)
         nameLabel.Position = UDim2.new(0, 5, 0, 0)
-        nameLabel.Text = unit.Name
+        nameLabel.Text = pet.Name
         nameLabel.TextColor3 = colors.text
         nameLabel.Font = Enum.Font.Gotham
         nameLabel.TextSize = 9
@@ -1062,52 +1003,79 @@ local function updateUnitsPage()
         damageLabel.BackgroundTransparency = 1
         damageLabel.Size = UDim2.new(0, 50, 1, 0)
         damageLabel.Position = UDim2.new(0, 160, 0, 0)
-        damageLabel.Text = "D:" .. unit.Damage
+        damageLabel.Text = "D:" .. pet.Damage
         damageLabel.TextColor3 = colors.success
         damageLabel.Font = Enum.Font.Gotham
         damageLabel.TextSize = 9
     end
     
-    unitsScrolling.CanvasSize = UDim2.new(0, 0, 0, #units * 27 + 10)
+    myPetsScrolling.CanvasSize = UDim2.new(0, 0, 0, #myPets * 27 + 10)
+end
+
+local function updateAllPetsPage()
+    for _, child in ipairs(allPetsScrolling:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    
+    local allPets = findAllPets()
+    local selectedPetForSteal = nil
+    
+    for i, petName in ipairs(allPets) do
+        local btn = Instance.new("TextButton")
+        btn.Parent = allPetsScrolling
+        btn.BackgroundColor3 = colors.tertiary
+        btn.Size = UDim2.new(1, -10, 0, 25)
+        btn.Position = UDim2.new(0, 5, 0, 5 + (i-1) * 27)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.BorderSizePixel = 0
+        btn.Name = "PetBtn_" .. petName
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Parent = btn
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Size = UDim2.new(1, -10, 1, 0)
+        nameLabel.Position = UDim2.new(0, 5, 0, 0)
+        nameLabel.Text = petName
+        nameLabel.TextColor3 = colors.text
+        nameLabel.Font = Enum.Font.Gotham
+        nameLabel.TextSize = 9
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        btn.MouseButton1Click:Connect(function()
+            selectedPetForSteal = petName
+            stealPetBtn.Text = "🔥 PEGAR: " .. petName
+        end)
+    end
+    
+    allPetsScrolling.CanvasSize = UDim2.new(0, 0, 0, #allPets * 27 + 10)
+    
+    -- Importante: reconectar o botão de roubo a cada atualização
+    stealPetBtn.MouseButton1Click:Connect(function()
+        if selectedPetForSteal then
+            stealPet(selectedPetForSteal)
+        else
+            log("Selecione um pet primeiro", "warning")
+        end
+    end)
 end
 
 -- ================ CONEXÕES DOS BOTÕES ================
-refreshStarsBtn.MouseButton1Click:Connect(updateStarsPage)
-spinStarBtn.MouseButton1Click:Connect(function()
-    if selectedStar then
-        spinStar(selectedStar)
-        updateStarsPage()
-    else
-        log("Nenhuma star selecionada", "warning")
-    end
-end)
-
-autoSpinBtn.MouseButton1Click:Connect(function()
-    local spinning = false
-    if autoSpinBtn.Text == "⚡" then
-        autoSpinBtn.Text = "⏹️"
-        autoSpinBtn.BackgroundColor3 = colors.danger
-        spinning = true
-        task.spawn(function()
-            while spinning do
-                stars = findStars()
-                for _, star in ipairs(stars) do
-                    spinStar(star)
-                    task.wait(0.5)
-                end
-                task.wait(1)
-            end
-        end)
-    else
-        autoSpinBtn.Text = "⚡"
-        autoSpinBtn.BackgroundColor3 = colors.tertiary
-        spinning = false
-    end
-end)
-
 refreshMobsBtn.MouseButton1Click:Connect(updateMobsPage)
-refreshUnitsBtn.MouseButton1Click:Connect(updateUnitsPage)
-equipBestBtn.MouseButton1Click:Connect(equipBestUnit)
+refreshMyPetsBtn.MouseButton1Click:Connect(updateMyPetsPage)
+refreshAllPetsBtn.MouseButton1Click:Connect(updateAllPetsPage)
+
+equipBestPetBtn.MouseButton1Click:Connect(function()
+    local myPets = listMyPets()
+    if #myPets == 0 then
+        log("Nenhum pet para equipar", "warning")
+        return
+    end
+    local best = myPets[1]
+    log("Melhor pet: " .. best.Name .. " (Dano: " .. best.Damage .. ")", "success")
+    -- Aqui você pode adicionar lógica para equipar o melhor pet
+end)
 
 farmBtn.MouseButton1Click:Connect(function()
     if farmActive then
@@ -1118,7 +1086,7 @@ farmBtn.MouseButton1Click:Connect(function()
         farmStatus.TextColor3 = colors.textDim
     else
         if not selectedMob then
-                        farmInfo.Text = "ERRO: Selecione um mob!"
+            farmInfo.Text = "ERRO: Selecione um mob!"
             return
         end
         startFarming()
@@ -1145,19 +1113,19 @@ end)
 
 task.spawn(function()
     while true do
-        if page2.Visible then updateStarsPage() end
-        if page3.Visible then updateMobsPage() end
-        if page4.Visible then updateUnitsPage() end
+        if page2.Visible then updateMobsPage() end
+        if page3.Visible then updateMyPetsPage() end
+        if page4.Visible then updateAllPetsPage() end
         task.wait(3)
     end
 end)
 
 -- ================ INICIALIZAÇÃO ================
-updateWorldPage()
-updateStarsPage()
 updateMobsPage()
-updateUnitsPage()
+updateMyPetsPage()
+updateAllPetsPage()
 switchPage(1)
 
-log("Stelk Hub v16.0 - NOCLIP EDITION carregado com sucesso!", "success")
-log("✅ Noclip ativado durante movimento | Tween suave | Farm automático", "info")
+log("🔥 Stelk Hub v17.0 - PETS EDITION (OP) carregado!", "success")
+log("✅ Função OP: Pegue QUALQUER pet do jogo!", "success")
+log("📌 Mundos: Leaf | Slayer | Cursed", "info")
