@@ -1,11 +1,10 @@
 --[[
     STELK HUB - LEAF WORLD
-    Versão: 12.0 - AUTO FARM
-    - Farm automático infinito com respawn
-    - Units atacam o mob
-    - Cancelar TP em bosses
-    - Estrelas com nome exato "Star"
-    - Detecção de units melhorada
+    Versão: 13.0 - ULTIMATE
+    - Detecção de todos os mundos
+    - Stars funcionando (nome exato do jogo)
+    - Units detectadas do inventário
+    - Auto Farm com units atacando
 ]]
 
 local player = game.Players.LocalPlayer
@@ -13,6 +12,7 @@ local guiService = game:GetService("CoreGui")
 local runService = game:GetService("RunService")
 local tweenService = game:GetService("TweenService")
 local userInputService = game:GetService("UserInputService")
+local replicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ================ VARIÁVEIS ================
 
@@ -21,7 +21,7 @@ local farmActive = false
 local selectedMob = nil
 local selectedUnit = nil
 local currentWorld = "Desconhecido"
-local inLeafWorld = false
+local currentWorldColor = Color3.fromRGB(150,150,150)
 local gems = 0
 local gold = 0
 local selectedStar = nil
@@ -30,8 +30,7 @@ local mobs = {}
 local units = {}
 local hubVisible = true
 local farmConnection = nil
-local currentTarget = nil
-local isBoss = false
+local worlds = {} -- Lista de mundos detectados
 
 -- ================ CORES ================
 
@@ -44,31 +43,62 @@ local colors = {
     danger = Color3.fromRGB(255, 80, 80),
     text = Color3.fromRGB(255, 255, 255),
     textDim = Color3.fromRGB(180, 180, 180),
-    highlight = Color3.fromRGB(70, 70, 70),
     selected = Color3.fromRGB(80, 150, 255),
-    warning = Color3.fromRGB(255, 200, 100)
+    warning = Color3.fromRGB(255, 200, 100),
+    world1 = Color3.fromRGB(100, 200, 100), -- Verde (Leaf)
+    world2 = Color3.fromRGB(200, 100, 100), -- Vermelho
+    world3 = Color3.fromRGB(100, 100, 200), -- Azul
+    world4 = Color3.fromRGB(200, 200, 100)  -- Amarelo
 }
 
--- ================ DETECÇÃO DE MUNDO ================
+-- ================ DETECÇÃO DE TODOS OS MUNDOS ================
 
-local function detectLeafWorld()
-    local leafKeywords = {
-        "leaf", "village", "konoha", "naruto", "hokage",
-        "folha", "kakashi", "sasuke", "sakura", "chakra"
+local function detectAllWorlds()
+    worlds = {}
+    
+    -- Palavras-chave para cada mundo possível
+    local worldKeywords = {
+        {name = "🍃 Leaf World", keywords = {"leaf", "village", "konoha", "naruto", "hokage", "folha"}, color = colors.world1},
+        {name = "🔥 Fire World", keywords = {"fire", "fogo", "flame", "inferno"}, color = colors.world2},
+        {name = "💧 Water World", keywords = {"water", "agua", "ocean", "mar", "lake"}, color = colors.world3},
+        {name = "🌪️ Wind World", keywords = {"wind", "vento", "storm", "tempestade"}, color = colors.world4},
+        {name = "⛰️ Mountain World", keywords = {"mountain", "montanha", "rock", "pedra"}, color = colors.world2},
+        {name = "🌲 Forest World", keywords = {"forest", "floresta", "woods", "selva"}, color = colors.world1}
     }
     
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        local name = obj.Name:lower()
-        for _, kw in ipairs(leafKeywords) do
-            if name:find(kw) then
-                inLeafWorld = true
-                return "🍃 LEAF WORLD", colors.success
+    -- Procurar por objetos que indiquem cada mundo
+    for _, worldInfo in ipairs(worldKeywords) do
+        local found = false
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local name = obj.Name:lower()
+            for _, kw in ipairs(worldInfo.keywords) do
+                if name:find(kw) then
+                    found = true
+                    table.insert(worlds, {
+                        name = worldInfo.name,
+                        color = worldInfo.color,
+                        active = true
+                    })
+                    break
+                end
             end
+            if found then break end
         end
     end
     
+    -- Determinar o mundo atual (o primeiro encontrado)
+    for _, world in ipairs(worlds) do
+        if world.active then
+            currentWorld = world.name
+            currentWorldColor = world.color
+            inLeafWorld = (world.name == "🍃 Leaf World")
+            return
+        end
+    end
+    
+    currentWorld = "❓ Mundo Desconhecido"
+    currentWorldColor = colors.textDim
     inLeafWorld = false
-    return "❌ FORA DO LEAF WORLD", colors.danger
 end
 
 -- ================ DETECÇÃO DE GEMS E GOLD ================
@@ -77,48 +107,79 @@ local function getGemsAndGold()
     gems = 0
     gold = 0
 
+    -- Procurar em leaderstats
     if player:FindFirstChild("leaderstats") then
         for _, child in ipairs(player.leaderstats:GetChildren()) do
             local name = child.Name:lower()
-            if name:find("gem") then gems = child.Value or 0 end
-            if name:find("gold") or name:find("coin") then gold = child.Value or 0 end
+            if name:find("gem") or name:find("gema") then
+                gems = child.Value or 0
+            end
+            if name:find("gold") or name:find("coin") or name:find("dinheiro") then
+                gold = child.Value or 0
+            end
+        end
+    end
+    
+    -- Procurar em outras pastas comuns
+    for _, obj in ipairs(player:GetChildren()) do
+        if obj:IsA("NumberValue") then
+            local name = obj.Name:lower()
+            if name:find("gem") then gems = obj.Value end
+            if name:find("gold") then gold = obj.Value end
         end
     end
 
     return gems, gold
 end
 
--- ================ SISTEMA DE STARS (NOME EXATO) ================
+-- ================ SISTEMA DE STARS (BUSCA REAL) ================
 
 local function findStars()
     local found = {}
     
-    if not inLeafWorld then 
-        print("🔍 Fora do Leaf World - não procurando estrelas")
-        return found 
-    end
+    print("🔍 Procurando Stars...")
     
-    print("🔍 Procurando Stars no Leaf World...")
+    -- Lista de possíveis nomes para estrelas no jogo
+    local starNames = {
+        "Star", "star", "STAR", "Gacha", "gacha", "Spin", "spin",
+        "Wheel", "wheel", "Roda", "roda", "Crystal", "crystal"
+    }
     
-    -- Nome exato "Star" (como o dev disse)
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Star" then
-            print("✅ Encontrado: " .. obj.Name)
-            table.insert(found, obj)
-        elseif obj.Name:sub(1,4) == "Star" then
-            print("✅ Encontrado: " .. obj.Name)
-            table.insert(found, obj)
-        end
-        
-        -- Procura por ClickDetectors com parent "Star"
-        if obj:IsA("ClickDetector") and obj.Parent then
-            if obj.Parent.Name == "Star" or obj.Parent.Name:sub(1,4) == "Star" then
-                print("✅ Encontrado ClickDetector em: " .. obj.Parent.Name)
-                table.insert(found, obj.Parent)
+        -- Verificar nome do objeto
+        for _, starName in ipairs(starNames) do
+            if obj.Name == starName then
+                if obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Part") then
+                    print("✅ Encontrado: " .. obj.Name .. " (" .. obj.ClassName .. ")")
+                    table.insert(found, obj)
+                    break
+                end
             end
         end
         
-        if #found >= 6 then break end
+        -- Verificar ClickDetectors
+        if obj:IsA("ClickDetector") and obj.Parent then
+            for _, starName in ipairs(starNames) do
+                if obj.Parent.Name == starName then
+                    print("✅ Encontrado ClickDetector em: " .. obj.Parent.Name)
+                    table.insert(found, obj.Parent)
+                    break
+                end
+            end
+        end
+        
+        -- Verificar ProximityPrompts
+        if obj:IsA("ProximityPrompt") and obj.Parent then
+            for _, starName in ipairs(starNames) do
+                if obj.Parent.Name == starName then
+                    print("✅ Encontrado ProximityPrompt em: " .. obj.Parent.Name)
+                    table.insert(found, obj.Parent)
+                    break
+                end
+            end
+        end
+        
+        if #found >= 10 then break end
     end
     
     print("🔍 Total de Stars: " .. #found)
@@ -128,20 +189,44 @@ end
 local function spinStar(star)
     if not star then return false end
 
+    -- Método 1: ClickDetector
     local detector = star:FindFirstChildOfClass("ClickDetector")
     if detector then
         fireclickdetector(detector)
+        print("✅ Usou ClickDetector")
         return true
     end
 
+    -- Método 2: ProximityPrompt
     local prompt = star:FindFirstChildOfClass("ProximityPrompt")
     if prompt then
         prompt:InputHoldBegin()
         task.wait(0.1)
         prompt:InputHoldEnd()
+        print("✅ Usou ProximityPrompt")
         return true
     end
+    
+    -- Método 3: TouchInterest
+    local touch = star:FindFirstChildOfClass("TouchTransmitter")
+    if touch and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        firetouchinterest(player.Character.HumanoidRootPart, star, 0)
+        task.wait(0.1)
+        firetouchinterest(player.Character.HumanoidRootPart, star, 1)
+        print("✅ Usou TouchInterest")
+        return true
+    end
+    
+    -- Método 4: RemoteEvent
+    for _, child in ipairs(star:GetChildren()) do
+        if child:IsA("RemoteEvent") then
+            child:FireServer()
+            print("✅ Usou RemoteEvent: " .. child.Name)
+            return true
+        end
+    end
 
+    print("❌ Falhou ao girar: " .. star.Name)
     return false
 end
 
@@ -153,19 +238,21 @@ local function findMobs()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
             local name = obj.Name:lower()
-            local health = obj:FindFirstChildOfClass("Humanoid").Health
-            local maxHealth = obj:FindFirstChildOfClass("Humanoid").MaxHealth
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            local health = humanoid and humanoid.Health or 0
+            local maxHealth = humanoid and humanoid.MaxHealth or 0
             
-            -- Verificar se é boss (muito HP)
+            -- Verificar se é boss (muito HP ou nome)
             local isBossMob = false
-            if maxHealth > 100000 then
+            if maxHealth > 50000 then
                 isBossMob = true
             end
-            if name:find("boss") then
+            if name:find("boss") or name:find("chefe") then
                 isBossMob = true
             end
             
-            if name:find("mob") or name:find("boss") or name:find("enemy") or name:find("leaf") then
+            -- Qualquer mob que não seja player
+            if obj ~= player.Character and health > 0 then
                 table.insert(found, {
                     Object = obj,
                     Name = obj.Name,
@@ -180,64 +267,86 @@ local function findMobs()
     return found
 end
 
--- ================ SISTEMA DE UNITS (BUSCA PROFUNDA) ================
+-- ================ SISTEMA DE UNITS (DO SEU INVENTÁRIO) ================
 
 local function findUnits()
     local found = {}
     
-    -- Função recursiva para procurar em todas as pastas
-    local function searchIn(container)
-        if not container then return end
-        for _, child in ipairs(container:GetChildren()) do
-            if child:IsA("Model") or child:IsA("Folder") then
-                -- Tenta encontrar valor de dano
-                local damage = 0
-                local damageValue = child:FindFirstChild("Damage") or 
-                                    child:FindFirstChild("Power") or 
-                                    child:FindFirstChild("Atk") or
-                                    child:FindFirstChild("Attack") or
-                                    child:FindFirstChild("Dano")
-                if damageValue and damageValue:IsA("NumberValue") then
-                    damage = damageValue.Value
+    print("🔍 Procurando Units no seu inventário...")
+    
+    -- Pastas específicas onde units podem estar (baseado no seu print)
+    local unitFolders = {
+        player:FindFirstChild("Units"),
+        player:FindFirstChild("Pets"),
+        player:FindFirstChild("Characters"),
+        player:FindFirstChild("Inventory"),
+        player:FindFirstChild("Bag"),
+        player:FindFirstChild("Storage"),
+        player:FindFirstChild("Deployed"),
+        player:FindFirstChild("MyUnits"),
+        player:FindFirstChild("Team"),
+        player:FindFirstChild("Party")
+    }
+    
+    -- Função para extrair dano de um objeto
+    local function getDamageFromObject(obj)
+        -- Procurar por valores de dano em várias propriedades
+        local damageProps = {"Damage", "Power", "Atk", "Attack", "Dano", "Strength", "Force"}
+        for _, prop in ipairs(damageProps) do
+            local value = obj:FindFirstChild(prop)
+            if value and value:IsA("NumberValue") then
+                return value.Value
+            end
+        end
+        return 0
+    end
+    
+    -- Procurar nas pastas específicas
+    for _, folder in ipairs(unitFolders) do
+        if folder then
+            for _, child in ipairs(folder:GetChildren()) do
+                if child:IsA("Model") then
+                    local damage = getDamageFromObject(child)
+                    local hasHumanoid = child:FindFirstChildOfClass("Humanoid") ~= nil
+                    
+                    -- Se tem dano ou é um modelo com humanoid
+                    if damage > 0 or hasHumanoid then
+                        print("✅ Unit encontrada: " .. child.Name .. " (Dano: " .. damage .. ")")
+                        table.insert(found, {
+                            Name = child.Name,
+                            Damage = damage,
+                            Object = child,
+                            HasHumanoid = hasHumanoid
+                        })
+                    end
                 end
-                
-                -- Verifica se tem Humanoid (é uma unit viva)
-                local hasHumanoid = child:FindFirstChildOfClass("Humanoid") ~= nil
-                
-                -- Se tem dano ou nome sugestivo, adiciona
-                if damage > 0 or child.Name:lower():find("unit") or child.Name:lower():find("pet") or hasHumanoid then
-                    table.insert(found, {
-                        Name = child.Name,
-                        Damage = damage,
-                        Object = child,
-                        HasHumanoid = hasHumanoid
-                    })
-                end
-                
-                -- Continua procurando dentro
-                searchIn(child)
             end
         end
     end
     
-    -- Pastas principais
-    local roots = {
-        player,
-        player:FindFirstChild("PlayerGui"),
-        player:FindFirstChild("Backpack"),
-        player:FindFirstChild("StarterGear"),
-        game:GetService("ReplicatedStorage")
-    }
-    
-    for _, root in ipairs(roots) do
-        if root then
-            searchIn(root)
+    -- Se não encontrou nada, procurar no Backpack e StarterGear
+    if #found == 0 then
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, child in ipairs(backpack:GetChildren()) do
+                if child:IsA("Tool") or child:IsA("Model") then
+                    local damage = getDamageFromObject(child)
+                    print("✅ Unit no Backpack: " .. child.Name)
+                    table.insert(found, {
+                        Name = child.Name,
+                        Damage = damage,
+                        Object = child,
+                        HasHumanoid = false
+                    })
+                end
+            end
         end
     end
     
     -- Ordenar por dano
     table.sort(found, function(a, b) return a.Damage > b.Damage end)
     
+    print("🔍 Total de Units: " .. #found)
     return found
 end
 
@@ -246,26 +355,37 @@ end
 local function commandUnitsToAttack(target)
     if not target then return end
     
-    -- Tenta diferentes métodos para fazer as units atacarem
+    print("⚔️ Comandando units para atacar: " .. target.Name)
+    
     for _, unit in ipairs(units) do
         if unit.Object and unit.Object.Parent then
             -- Método 1: RemoteEvent de ataque
             local attackRemote = unit.Object:FindFirstChild("Attack") or 
                                  unit.Object:FindFirstChild("Skill") or
-                                 unit.Object:FindFirstChild("Combat")
+                                 unit.Object:FindFirstChild("Combat") or
+                                 unit.Object:FindFirstChild("Use")
             
             if attackRemote and attackRemote:IsA("RemoteEvent") then
                 attackRemote:FireServer(target)
+                print("   Unit " .. unit.Name .. " atacou via Remote")
             end
             
             -- Método 2: Colocar target no Humanoid
             if unit.HasHumanoid then
                 local humanoid = unit.Object:FindFirstChildOfClass("Humanoid")
                 if humanoid then
-                    -- Tenta definir target (alguns jogos usam isso)
+                    -- Alguns jogos usam ObjectValue para target
                     local targetValue = unit.Object:FindFirstChild("Target")
                     if targetValue and targetValue:IsA("ObjectValue") then
                         targetValue.Value = target
+                    end
+                    
+                    -- Forçar ataque (se tiver walkto point)
+                    if target:FindFirstChild("HumanoidRootPart") then
+                        local root = unit.Object:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            root.CFrame = target.HumanoidRootPart.CFrame + Vector3.new(0, 0, 5)
+                        end
                     end
                 end
             end
@@ -286,10 +406,13 @@ local function startFarming()
     
     farmConnection = task.spawn(function()
         while farmActive do
-            -- Procurar o mob atual (pode ter respawnado)
+            -- Atualizar lista de mobs
+            mobs = findMobs()
+            
+            -- Procurar o mob selecionado atual
             local currentMob = nil
             for _, mob in ipairs(mobs) do
-                if mob.Object and mob.Object.Parent and mob.Name == selectedMob.Name then
+                if mob.Name == selectedMob.Name then
                     currentMob = mob
                     break
                 end
@@ -298,12 +421,14 @@ local function startFarming()
             if not currentMob then
                 -- Mob morreu, esperar respawn
                 print("⏳ Mob morto, aguardando respawn...")
-                task.wait(5) -- Ajuste conforme necessário
+                task.wait(5)
             else
+                -- Atualizar units
+                units = findUnits()
+                
                 -- Verificar se é boss
                 if currentMob.IsBoss then
-                    print("⚠️ Boss detectado - cancelando TP para evitar kick")
-                    -- Não faz TP, apenas ataca de longe
+                    print("⚠️ Boss detectado - atacando de longe")
                     commandUnitsToAttack(currentMob.Object)
                     task.wait(2)
                 else
@@ -317,9 +442,9 @@ local function startFarming()
                         local targetPos = root.Position + Vector3.new(0, 5, 0)
                         local distance = (targetPos - charRoot.Position).Magnitude
                         
-                        -- TP suave
-                        if distance > 50 then
-                            local tweenInfo = TweenInfo.new(distance / 100, Enum.EasingStyle.Linear)
+                        -- TP suave (só se estiver longe)
+                        if distance > 20 then
+                            local tweenInfo = TweenInfo.new(distance / 50, Enum.EasingStyle.Linear)
                             local goal = {CFrame = CFrame.new(targetPos)}
                             local tween = tweenService:Create(charRoot, tweenInfo, goal)
                             tween:Play()
@@ -332,9 +457,8 @@ local function startFarming()
                         -- Verificar se o mob morreu
                         local humanoid = currentMob.Object:FindFirstChildOfClass("Humanoid")
                         if humanoid and humanoid.Health <= 0 then
-                            print("💰 Mob morto, gold farmado!")
-                            -- Atualizar lista de mobs
-                            mobs = findMobs()
+                            print("💰 Mob morto! Gold farmado!")
+                            task.wait(1)
                         end
                     end
                 end
@@ -366,13 +490,21 @@ local function equipBestUnit()
     print("✅ Melhor unit: " .. best.Name .. " (Dano: " .. best.Damage .. ")")
     
     if best.Object then
-        -- Tenta remote
+        -- Tenta remote de equipar
         local remote = player:FindFirstChild("EquipUnit") or 
                       player:FindFirstChild("SelectUnit") or
-                      game:GetService("ReplicatedStorage"):FindFirstChild("EquipUnit")
+                      player:FindFirstChild("UseUnit") or
+                      replicatedStorage:FindFirstChild("EquipUnit")
         
         if remote and remote:IsA("RemoteEvent") then
             remote:FireServer(best.Object)
+            print("✅ Unit equipada via Remote")
+        end
+        
+        -- Tenta mover para o personagem
+        if player.Character then
+            best.Object.Parent = player.Character
+            print("✅ Unit movida para o personagem")
         end
     end
 end
@@ -397,7 +529,7 @@ local function toggleBypass()
                 local method = getnamecallmethod()
                 if method == "FireServer" then
                     local remoteName = tostring(self):lower()
-                    if remoteName:find("anticheat") then
+                    if remoteName:find("anticheat") or remoteName:find("antiexploit") then
                         return
                     end
                 end
@@ -437,8 +569,8 @@ local mainFrame = Instance.new("Frame")
 mainFrame.Parent = screenGui
 mainFrame.BackgroundColor3 = colors.background
 mainFrame.BorderSizePixel = 0
-mainFrame.Size = UDim2.new(0, 400, 0, 400)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -200)
+mainFrame.Size = UDim2.new(0, 400, 0, 450)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -225)
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Visible = true
@@ -447,7 +579,7 @@ mainFrame.Visible = true
 local topBar = Instance.new("Frame")
 topBar.Parent = mainFrame
 topBar.BackgroundColor3 = colors.secondary
-topBar.Size = UDim2.new(1, 0, 0, 40)
+topBar.Size = UDim2.new(1, 0, 0, 45)
 topBar.BorderSizePixel = 0
 
 local title = Instance.new("TextLabel")
@@ -458,15 +590,36 @@ title.Position = UDim2.new(0, 10, 0, 0)
 title.Text = "STELK HUB"
 title.TextColor3 = colors.accent
 title.Font = Enum.Font.GothamBold
-title.TextSize = 18
+title.TextSize = 20
 title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Fechar
+local closeBtn = Instance.new("TextButton")
+closeBtn.Parent = topBar
+closeBtn.BackgroundColor3 = colors.danger
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -38, 0.5, -14)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = colors.text
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 16
+closeBtn.BorderSizePixel = 0
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    if farmActive then stopFarming() end
+    screenGui:Destroy()
+end)
 
 -- Abas
 local tabContainer = Instance.new("Frame")
 tabContainer.Parent = mainFrame
 tabContainer.BackgroundColor3 = colors.secondary
-tabContainer.Size = UDim2.new(1, 0, 0, 35)
-tabContainer.Position = UDim2.new(0, 0, 0, 40)
+tabContainer.Size = UDim2.new(1, 0, 0, 40)
+tabContainer.Position = UDim2.new(0, 0, 0, 45)
 tabContainer.ClipsDescendants = true
 
 local tabScrolling = Instance.new("ScrollingFrame")
@@ -481,22 +634,22 @@ local function createTab(name, pos)
     local btn = Instance.new("TextButton")
     btn.Parent = tabScrolling
     btn.BackgroundColor3 = colors.background
-    btn.Size = UDim2.new(0, 70, 0, 25)
-    btn.Position = UDim2.new(0, pos, 0.5, -12.5)
+    btn.Size = UDim2.new(0, 70, 0, 30)
+    btn.Position = UDim2.new(0, pos, 0.5, -15)
     btn.Text = name
     btn.TextColor3 = colors.textDim
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
+    btn.TextSize = 13
     btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
     return btn
 end
 
-local tab1 = createTab("MUNDO", 10)
+local tab1 = createTab("MUNDOS", 10)
 local tab2 = createTab("STARS", 90)
 local tab3 = createTab("MOBS", 170)
 local tab4 = createTab("UNITS", 250)
-local tab5 = createTab("FARM", 330) -- Nova aba de Farm
+local tab5 = createTab("FARM", 330)
 
 local pageIndicator = Instance.new("Frame")
 pageIndicator.Parent = tabScrolling
@@ -509,8 +662,8 @@ pageIndicator.BorderSizePixel = 0
 local content = Instance.new("ScrollingFrame")
 content.Parent = mainFrame
 content.BackgroundColor3 = colors.background
-content.Size = UDim2.new(1, -20, 1, -95)
-content.Position = UDim2.new(0, 10, 0, 85)
+content.Size = UDim2.new(1, -20, 1, -105)
+content.Position = UDim2.new(0, 10, 0, 95)
 content.CanvasSize = UDim2.new(0, 0, 2, 0)
 content.ScrollBarThickness = 4
 content.BorderSizePixel = 0
@@ -519,42 +672,216 @@ local contentCorner = Instance.new("UICorner")
 contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = content
 
--- PÁGINA 1: MUNDO (igual antes)
+-- ================ PÁGINA 1: MUNDOS ================
+
 local page1 = Instance.new("Frame")
 page1.Parent = content
 page1.BackgroundTransparency = 1
-page1.Size = UDim2.new(1, 0, 0, 250)
+page1.Size = UDim2.new(1, 0, 0, 300)
 page1.Position = UDim2.new(0, 0, 0, 0)
 page1.Visible = true
 
--- (manter o código da página 1 igual ao anterior)
--- [Código da página 1 omitido por brevidade, mas deve ser mantido]
+local worldsTitle = Instance.new("TextLabel")
+worldsTitle.Parent = page1
+worldsTitle.BackgroundTransparency = 1
+worldsTitle.Size = UDim2.new(1, -20, 0, 35)
+worldsTitle.Position = UDim2.new(0, 10, 0, 5)
+worldsTitle.Text = "🌍 MUNDOS DISPONÍVEIS"
+worldsTitle.TextColor3 = colors.accent
+worldsTitle.Font = Enum.Font.GothamBold
+worldsTitle.TextSize = 18
+worldsTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- PÁGINA 2: STARS
+-- Card do mundo atual
+local currentWorldCard = Instance.new("Frame")
+currentWorldCard.Parent = page1
+currentWorldCard.BackgroundColor3 = colors.secondary
+currentWorldCard.Size = UDim2.new(0, 360, 0, 70)
+currentWorldCard.Position = UDim2.new(0.5, -180, 0, 50)
+currentWorldCard.BorderSizePixel = 0
+
+local worldCardCorner = Instance.new("UICorner")
+worldCardCorner.CornerRadius = UDim.new(0, 8)
+worldCardCorner.Parent = currentWorldCard
+
+local worldIcon = Instance.new("TextLabel")
+worldIcon.Parent = currentWorldCard
+worldIcon.BackgroundTransparency = 1
+worldIcon.Size = UDim2.new(0, 40, 1, 0)
+worldIcon.Position = UDim2.new(0, 10, 0, 0)
+worldIcon.Text = "📍"
+worldIcon.TextColor3 = colors.accent
+worldIcon.Font = Enum.Font.GothamBold
+worldIcon.TextSize = 30
+
+local worldName = Instance.new("TextLabel")
+worldName.Parent = currentWorldCard
+worldName.BackgroundTransparency = 1
+worldName.Size = UDim2.new(0, 250, 0, 25)
+worldName.Position = UDim2.new(0, 60, 0, 15)
+worldName.Text = "Detectando..."
+worldName.TextColor3 = colors.accent
+worldName.Font = Enum.Font.GothamBold
+worldName.TextSize = 16
+worldName.TextXAlignment = Enum.TextXAlignment.Left
+
+local worldStatus = Instance.new("TextLabel")
+worldStatus.Parent = currentWorldCard
+worldStatus.BackgroundTransparency = 1
+worldStatus.Size = UDim2.new(0, 250, 0, 20)
+worldStatus.Position = UDim2.new(0, 60, 0, 45)
+worldStatus.Text = "Atualizado automaticamente"
+worldStatus.TextColor3 = colors.textDim
+worldStatus.Font = Enum.Font.Gotham
+worldStatus.TextSize = 11
+worldStatus.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Lista de todos os mundos
+local worldsList = Instance.new("TextLabel")
+worldsList.Parent = page1
+worldsList.BackgroundColor3 = colors.secondary
+worldsList.Size = UDim2.new(0, 360, 0, 120)
+worldsList.Position = UDim2.new(0.5, -180, 0, 135)
+worldsList.Text = "Procurando mundos...\n\nAguardando detecção..."
+worldsList.TextColor3 = colors.textDim
+worldsList.Font = Enum.Font.Gotham
+worldsList.TextSize = 12
+worldsList.TextWrapped = true
+worldsList.TextXAlignment = Enum.TextXAlignment.Left
+worldsList.TextYAlignment = Enum.TextYAlignment.Top
+
+local worldsCorner = Instance.new("UICorner")
+worldsCorner.CornerRadius = UDim.new(0, 8)
+worldsCorner.Parent = worldsList
+
+-- Recursos
+local resourcesCard = Instance.new("Frame")
+resourcesCard.Parent = page1
+resourcesCard.BackgroundColor3 = colors.secondary
+resourcesCard.Size = UDim2.new(0, 360, 0, 60)
+resourcesCard.Position = UDim2.new(0.5, -180, 0, 270)
+resourcesCard.BorderSizePixel = 0
+
+local resourcesCorner = Instance.new("UICorner")
+resourcesCorner.CornerRadius = UDim.new(0, 8)
+resourcesCorner.Parent = resourcesCard
+
+local gemsFrame = Instance.new("Frame")
+gemsFrame.Parent = resourcesCard
+gemsFrame.BackgroundColor3 = colors.tertiary
+gemsFrame.Size = UDim2.new(0, 160, 0, 40)
+gemsFrame.Position = UDim2.new(0, 15, 0.5, -20)
+gemsFrame.BorderSizePixel = 0
+
+local gemsCorner = Instance.new("UICorner")
+gemsCorner.CornerRadius = UDim.new(0, 6)
+gemsCorner.Parent = gemsFrame
+
+local gemsIcon = Instance.new("TextLabel")
+gemsIcon.Parent = gemsFrame
+gemsIcon.BackgroundTransparency = 1
+gemsIcon.Size = UDim2.new(0, 30, 1, 0)
+gemsIcon.Position = UDim2.new(0, 5, 0, 0)
+gemsIcon.Text = "💎"
+gemsIcon.TextColor3 = colors.accent
+gemsIcon.Font = Enum.Font.GothamBold
+gemsIcon.TextSize = 18
+
+local gemsValue = Instance.new("TextLabel")
+gemsValue.Parent = gemsFrame
+gemsValue.BackgroundTransparency = 1
+gemsValue.Size = UDim2.new(0, 110, 0, 25)
+gemsValue.Position = UDim2.new(0, 40, 0.5, -12.5)
+gemsValue.Text = "0"
+gemsValue.TextColor3 = colors.accent
+gemsValue.Font = Enum.Font.GothamBold
+gemsValue.TextSize = 15
+gemsValue.TextXAlignment = Enum.TextXAlignment.Left
+
+local goldFrame = Instance.new("Frame")
+goldFrame.Parent = resourcesCard
+goldFrame.BackgroundColor3 = colors.tertiary
+goldFrame.Size = UDim2.new(0, 160, 0, 40)
+goldFrame.Position = UDim2.new(1, -175, 0.5, -20)
+goldFrame.BorderSizePixel = 0
+
+local goldCorner = Instance.new("UICorner")
+goldCorner.CornerRadius = UDim.new(0, 6)
+goldCorner.Parent = goldFrame
+
+local goldIcon = Instance.new("TextLabel")
+goldIcon.Parent = goldFrame
+goldIcon.BackgroundTransparency = 1
+goldIcon.Size = UDim2.new(0, 30, 1, 0)
+goldIcon.Position = UDim2.new(0, 5, 0, 0)
+goldIcon.Text = "🪙"
+goldIcon.TextColor3 = colors.accent
+goldIcon.Font = Enum.Font.GothamBold
+goldIcon.TextSize = 18
+
+local goldValue = Instance.new("TextLabel")
+goldValue.Parent = goldFrame
+goldValue.BackgroundTransparency = 1
+goldValue.Size = UDim2.new(0, 110, 0, 25)
+goldValue.Position = UDim2.new(0, 40, 0.5, -12.5)
+goldValue.Text = "0"
+goldValue.TextColor3 = colors.accent
+goldValue.Font = Enum.Font.GothamBold
+goldValue.TextSize = 15
+goldValue.TextXAlignment = Enum.TextXAlignment.Left
+
+-- ================ PÁGINA 2: STARS ================
+
 local page2 = Instance.new("Frame")
 page2.Parent = content
 page2.BackgroundTransparency = 1
-page2.Size = UDim2.new(1, 0, 0, 300)
+page2.Size = UDim2.new(1, 0, 0, 350)
 page2.Position = UDim2.new(0, 0, 0, 0)
 page2.Visible = false
 
 local starsTitle = Instance.new("TextLabel")
 starsTitle.Parent = page2
 starsTitle.BackgroundTransparency = 1
-starsTitle.Size = UDim2.new(1, -20, 0, 30)
+starsTitle.Size = UDim2.new(1, -20, 0, 35)
 starsTitle.Position = UDim2.new(0, 10, 0, 5)
-starsTitle.Text = "⭐ STARS"
+starsTitle.Text = "⭐ SISTEMA DE STARS"
 starsTitle.TextColor3 = colors.accent
 starsTitle.Font = Enum.Font.GothamBold
 starsTitle.TextSize = 18
 starsTitle.TextXAlignment = Enum.TextXAlignment.Left
 
+-- Botão DEBUG
+local debugBtn = Instance.new("TextButton")
+debugBtn.Parent = page2
+debugBtn.BackgroundColor3 = colors.tertiary
+debugBtn.Size = UDim2.new(0, 80, 0, 25)
+debugBtn.Position = UDim2.new(1, -90, 0, 10)
+debugBtn.Text = "DEBUG"
+debugBtn.TextColor3 = colors.text
+debugBtn.Font = Enum.Font.GothamBold
+debugBtn.TextSize = 10
+debugBtn.BorderSizePixel = 0
+
+local debugCorner = Instance.new("UICorner")
+debugCorner.CornerRadius = UDim.new(0, 6)
+debugCorner.Parent = debugBtn
+
+debugBtn.MouseButton1Click:Connect(function()
+    print("🔍 DEBUG MODE - Procurando Stars manualmente...")
+    local found = findStars()
+    print("📋 Total encontrado: " .. #found)
+    for i, star in ipairs(found) do
+        print("   " .. i .. ". " .. star.Name .. " (" .. star.ClassName .. ")")
+    end
+end)
+
+-- Lista de Stars
 local starsList = Instance.new("TextLabel")
 starsList.Parent = page2
 starsList.BackgroundColor3 = colors.secondary
-starsList.Size = UDim2.new(0, 360, 0, 120)
-starsList.Position = UDim2.new(0.5, -180, 0, 40)
-starsList.Text = "Aguardando...\nEntre no Leaf World"
+starsList.Size = UDim2.new(0, 360, 0, 150)
+starsList.Position = UDim2.new(0.5, -180, 0, 50)
+starsList.Text = "Procurando Stars...\n\nAguardando detecção..."
 starsList.TextColor3 = colors.textDim
 starsList.Font = Enum.Font.Gotham
 starsList.TextSize = 12
@@ -566,15 +893,17 @@ local starsCorner = Instance.new("UICorner")
 starsCorner.CornerRadius = UDim.new(0, 8)
 starsCorner.Parent = starsList
 
+-- Botões
 local refreshStarsBtn = Instance.new("TextButton")
 refreshStarsBtn.Parent = page2
 refreshStarsBtn.BackgroundColor3 = colors.tertiary
-refreshStarsBtn.Size = UDim2.new(0, 100, 0, 30)
-refreshStarsBtn.Position = UDim2.new(0.5, -160, 0, 170)
+refreshStarsBtn.Size = UDim2.new(0, 110, 0, 32)
+refreshStarsBtn.Position = UDim2.new(0.5, -170, 0, 215)
 refreshStarsBtn.Text = "🔄 ATUALIZAR"
 refreshStarsBtn.TextColor3 = colors.text
 refreshStarsBtn.Font = Enum.Font.GothamBold
 refreshStarsBtn.TextSize = 11
+refreshStarsBtn.BorderSizePixel = 0
 
 local refreshCorner = Instance.new("UICorner")
 refreshCorner.CornerRadius = UDim.new(0, 6)
@@ -583,18 +912,49 @@ refreshCorner.Parent = refreshStarsBtn
 local spinStarBtn = Instance.new("TextButton")
 spinStarBtn.Parent = page2
 spinStarBtn.BackgroundColor3 = colors.tertiary
-spinStarBtn.Size = UDim2.new(0, 100, 0, 30)
-spinStarBtn.Position = UDim2.new(0.5, -50, 0, 170)
+spinStarBtn.Size = UDim2.new(0, 110, 0, 32)
+spinStarBtn.Position = UDim2.new(0.5, -55, 0, 215)
 spinStarBtn.Text = "🎯 GIRAR #1"
 spinStarBtn.TextColor3 = colors.text
 spinStarBtn.Font = Enum.Font.GothamBold
 spinStarBtn.TextSize = 11
+spinStarBtn.BorderSizePixel = 0
 
 local spinCorner = Instance.new("UICorner")
 spinCorner.CornerRadius = UDim.new(0, 6)
 spinCorner.Parent = spinStarBtn
 
--- PÁGINA 3: MOBS
+local autoSpinBtn = Instance.new("TextButton")
+autoSpinBtn.Parent = page2
+autoSpinBtn.BackgroundColor3 = colors.tertiary
+autoSpinBtn.Size = UDim2.new(0, 110, 0, 32)
+autoSpinBtn.Position = UDim2.new(0.5, 60, 0, 215)
+autoSpinBtn.Text = "⚡ AUTO SPIN"
+autoSpinBtn.TextColor3 = colors.text
+autoSpinBtn.Font = Enum.Font.GothamBold
+autoSpinBtn.TextSize = 11
+autoSpinBtn.BorderSizePixel = 0
+
+local autoCorner = Instance.new("UICorner")
+autoCorner.CornerRadius = UDim.new(0, 6)
+autoCorner.Parent = autoSpinBtn
+
+local starInfo = Instance.new("TextLabel")
+starInfo.Parent = page2
+starInfo.BackgroundColor3 = colors.secondary
+starInfo.Size = UDim2.new(0, 360, 0, 40)
+starInfo.Position = UDim2.new(0.5, -180, 0, 260)
+starInfo.Text = "Clique em ATUALIZAR para buscar Stars"
+starInfo.TextColor3 = colors.textDim
+starInfo.Font = Enum.Font.Gotham
+starInfo.TextSize = 12
+
+local infoCorner = Instance.new("UICorner")
+infoCorner.CornerRadius = UDim.new(0, 8)
+infoCorner.Parent = starInfo
+
+-- ================ PÁGINA 3: MOBS ================
+
 local page3 = Instance.new("Frame")
 page3.Parent = content
 page3.BackgroundTransparency = 1
@@ -605,9 +965,9 @@ page3.Visible = false
 local mobsTitle = Instance.new("TextLabel")
 mobsTitle.Parent = page3
 mobsTitle.BackgroundTransparency = 1
-mobsTitle.Size = UDim2.new(1, -20, 0, 30)
+mobsTitle.Size = UDim2.new(1, -20, 0, 35)
 mobsTitle.Position = UDim2.new(0, 10, 0, 5)
-mobsTitle.Text = "👾 MOBS"
+mobsTitle.Text = "👾 MOBS DISPONÍVEIS"
 mobsTitle.TextColor3 = colors.accent
 mobsTitle.Font = Enum.Font.GothamBold
 mobsTitle.TextSize = 18
@@ -616,8 +976,8 @@ mobsTitle.TextXAlignment = Enum.TextXAlignment.Left
 local mobsScrolling = Instance.new("ScrollingFrame")
 mobsScrolling.Parent = page3
 mobsScrolling.BackgroundColor3 = colors.secondary
-mobsScrolling.Size = UDim2.new(0, 360, 0, 200)
-mobsScrolling.Position = UDim2.new(0.5, -180, 0, 40)
+mobsScrolling.Size = UDim2.new(0, 360, 0, 220)
+mobsScrolling.Position = UDim2.new(0.5, -180, 0, 50)
 mobsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
 mobsScrolling.ScrollBarThickness = 4
 mobsScrolling.BorderSizePixel = 0
@@ -629,8 +989,8 @@ mobsCorner.Parent = mobsScrolling
 local selectedMobFrame = Instance.new("Frame")
 selectedMobFrame.Parent = page3
 selectedMobFrame.BackgroundColor3 = colors.tertiary
-selectedMobFrame.Size = UDim2.new(0, 360, 0, 35)
-selectedMobFrame.Position = UDim2.new(0.5, -180, 0, 250)
+selectedMobFrame.Size = UDim2.new(0, 360, 0, 40)
+selectedMobFrame.Position = UDim2.new(0.5, -180, 0, 280)
 selectedMobFrame.BorderSizePixel = 0
 
 local selectedCorner = Instance.new("UICorner")
@@ -651,18 +1011,20 @@ selectedMobText.TextXAlignment = Enum.TextXAlignment.Left
 local refreshMobsBtn = Instance.new("TextButton")
 refreshMobsBtn.Parent = page3
 refreshMobsBtn.BackgroundColor3 = colors.tertiary
-refreshMobsBtn.Size = UDim2.new(0, 330, 0, 30)
-refreshMobsBtn.Position = UDim2.new(0.5, -165, 0, 295)
+refreshMobsBtn.Size = UDim2.new(0, 330, 0, 35)
+refreshMobsBtn.Position = UDim2.new(0.5, -165, 0, 330)
 refreshMobsBtn.Text = "🔄 ATUALIZAR MOBS"
 refreshMobsBtn.TextColor3 = colors.text
 refreshMobsBtn.Font = Enum.Font.GothamBold
-refreshMobsBtn.TextSize = 11
+refreshMobsBtn.TextSize = 12
+refreshMobsBtn.BorderSizePixel = 0
 
 local refreshMobsCorner = Instance.new("UICorner")
 refreshMobsCorner.CornerRadius = UDim.new(0, 6)
 refreshMobsCorner.Parent = refreshMobsBtn
 
--- PÁGINA 4: UNITS
+-- ================ PÁGINA 4: UNITS ================
+
 local page4 = Instance.new("Frame")
 page4.Parent = content
 page4.BackgroundTransparency = 1
@@ -673,9 +1035,9 @@ page4.Visible = false
 local unitsTitle = Instance.new("TextLabel")
 unitsTitle.Parent = page4
 unitsTitle.BackgroundTransparency = 1
-unitsTitle.Size = UDim2.new(1, -20, 0, 30)
+unitsTitle.Size = UDim2.new(1, -20, 0, 35)
 unitsTitle.Position = UDim2.new(0, 10, 0, 5)
-unitsTitle.Text = "⚔️ UNITS"
+unitsTitle.Text = "⚔️ SUAS UNITS"
 unitsTitle.TextColor3 = colors.accent
 unitsTitle.Font = Enum.Font.GothamBold
 unitsTitle.TextSize = 18
@@ -684,8 +1046,8 @@ unitsTitle.TextXAlignment = Enum.TextXAlignment.Left
 local unitsScrolling = Instance.new("ScrollingFrame")
 unitsScrolling.Parent = page4
 unitsScrolling.BackgroundColor3 = colors.secondary
-unitsScrolling.Size = UDim2.new(0, 360, 0, 250)
-unitsScrolling.Position = UDim2.new(0.5, -180, 0, 40)
+unitsScrolling.Size = UDim2.new(0, 360, 0, 220)
+unitsScrolling.Position = UDim2.new(0.5, -180, 0, 50)
 unitsScrolling.CanvasSize = UDim2.new(0, 0, 2, 0)
 unitsScrolling.ScrollBarThickness = 4
 unitsScrolling.BorderSizePixel = 0
@@ -698,11 +1060,12 @@ local equipBestBtn = Instance.new("TextButton")
 equipBestBtn.Parent = page4
 equipBestBtn.BackgroundColor3 = colors.success
 equipBestBtn.Size = UDim2.new(0, 200, 0, 35)
-equipBestBtn.Position = UDim2.new(0.5, -100, 0, 300)
-equipBestBtn.Text = "⚡ EQUIP BEST"
+equipBestBtn.Position = UDim2.new(0.5, -100, 0, 280)
+equipBestBtn.Text = "⚡ EQUIPAR MELHOR"
 equipBestBtn.TextColor3 = colors.background
 equipBestBtn.Font = Enum.Font.GothamBold
-equipBestBtn.TextSize = 13
+equipBestBtn.TextSize = 12
+equipBestBtn.BorderSizePixel = 0
 
 local equipBestCorner = Instance.new("UICorner")
 equipBestCorner.CornerRadius = UDim.new(0, 6)
@@ -712,28 +1075,30 @@ local refreshUnitsBtn = Instance.new("TextButton")
 refreshUnitsBtn.Parent = page4
 refreshUnitsBtn.BackgroundColor3 = colors.tertiary
 refreshUnitsBtn.Size = UDim2.new(0, 200, 0, 30)
-refreshUnitsBtn.Position = UDim2.new(0.5, -100, 0, 345)
+refreshUnitsBtn.Position = UDim2.new(0.5, -100, 0, 325)
 refreshUnitsBtn.Text = "🔄 ATUALIZAR UNITS"
 refreshUnitsBtn.TextColor3 = colors.text
 refreshUnitsBtn.Font = Enum.Font.GothamBold
 refreshUnitsBtn.TextSize = 11
+refreshUnitsBtn.BorderSizePixel = 0
 
 local refreshUnitsCorner = Instance.new("UICorner")
 refreshUnitsCorner.CornerRadius = UDim.new(0, 6)
 refreshUnitsCorner.Parent = refreshUnitsBtn
 
--- PÁGINA 5: FARM
+-- ================ PÁGINA 5: FARM ================
+
 local page5 = Instance.new("Frame")
 page5.Parent = content
 page5.BackgroundTransparency = 1
-page5.Size = UDim2.new(1, 0, 0, 200)
+page5.Size = UDim2.new(1, 0, 0, 250)
 page5.Position = UDim2.new(0, 0, 0, 0)
 page5.Visible = false
 
 local farmTitle = Instance.new("TextLabel")
 farmTitle.Parent = page5
 farmTitle.BackgroundTransparency = 1
-farmTitle.Size = UDim2.new(1, -20, 0, 30)
+farmTitle.Size = UDim2.new(1, -20, 0, 35)
 farmTitle.Position = UDim2.new(0, 10, 0, 5)
 farmTitle.Text = "⚙️ AUTO FARM"
 farmTitle.TextColor3 = colors.accent
@@ -744,8 +1109,8 @@ farmTitle.TextXAlignment = Enum.TextXAlignment.Left
 local farmCard = Instance.new("Frame")
 farmCard.Parent = page5
 farmCard.BackgroundColor3 = colors.secondary
-farmCard.Size = UDim2.new(0, 360, 0, 100)
-farmCard.Position = UDim2.new(0.5, -180, 0, 40)
+farmCard.Size = UDim2.new(0, 360, 0, 130)
+farmCard.Position = UDim2.new(0.5, -180, 0, 50)
 farmCard.BorderSizePixel = 0
 
 local farmCardCorner = Instance.new("UICorner")
@@ -757,25 +1122,53 @@ farmInfo.Parent = farmCard
 farmInfo.BackgroundTransparency = 1
 farmInfo.Size = UDim2.new(1, -20, 0, 40)
 farmInfo.Position = UDim2.new(0, 10, 0, 5)
-farmInfo.Text = "Mob selecionado: " .. (selectedMob and selectedMob.Name or "Nenhum")
+farmInfo.Text = "Mob selecionado: Nenhum"
 farmInfo.TextColor3 = colors.textDim
 farmInfo.Font = Enum.Font.Gotham
-farmInfo.TextSize = 12
+farmInfo.TextSize = 13
 farmInfo.TextXAlignment = Enum.TextXAlignment.Left
+
+local farmStatus = Instance.new("TextLabel")
+farmStatus.Parent = farmCard
+farmStatus.BackgroundTransparency = 1
+farmStatus.Size = UDim2.new(1, -20, 0, 25)
+farmStatus.Position = UDim2.new(0, 10, 0, 45)
+farmStatus.Text = "Status: Parado"
+farmStatus.TextColor3 = colors.textDim
+farmStatus.Font = Enum.Font.Gotham
+farmStatus.TextSize = 12
+farmStatus.TextXAlignment = Enum.TextXAlignment.Left
 
 local farmToggleBtn = Instance.new("TextButton")
 farmToggleBtn.Parent = farmCard
 farmToggleBtn.BackgroundColor3 = colors.tertiary
-farmToggleBtn.Size = UDim2.new(0, 200, 0, 35)
-farmToggleBtn.Position = UDim2.new(0.5, -100, 0, 55)
+farmToggleBtn.Size = UDim2.new(0, 200, 0, 40)
+farmToggleBtn.Position = UDim2.new(0.5, -100, 0, 80)
 farmToggleBtn.Text = "▶️ INICIAR FARM"
 farmToggleBtn.TextColor3 = colors.text
 farmToggleBtn.Font = Enum.Font.GothamBold
-farmToggleBtn.TextSize = 13
+farmToggleBtn.TextSize = 14
+farmToggleBtn.BorderSizePixel = 0
 
 local farmToggleCorner = Instance.new("UICorner")
 farmToggleCorner.CornerRadius = UDim.new(0, 6)
 farmToggleCorner.Parent = farmToggleBtn
+
+-- Botão Bypass (na página Farm)
+local bypassBtn = Instance.new("TextButton")
+bypassBtn.Parent = page5
+bypassBtn.BackgroundColor3 = colors.tertiary
+bypassBtn.Size = UDim2.new(0, 200, 0, 35)
+bypassBtn.Position = UDim2.new(0.5, -100, 0, 200)
+bypassBtn.Text = "🛡️ ATIVAR BYPASS"
+bypassBtn.TextColor3 = colors.text
+bypassBtn.Font = Enum.Font.GothamBold
+bypassBtn.TextSize = 12
+bypassBtn.BorderSizePixel = 0
+
+local bypassCorner = Instance.new("UICorner")
+bypassCorner.CornerRadius = UDim.new(0, 6)
+bypassCorner.Parent = bypassBtn
 
 -- ================ FUNÇÕES DE NAVEGAÇÃO ================
 
@@ -796,11 +1189,11 @@ local function switchPage(page)
         tabs[i].TextColor3 = (i == page) and colors.accent or colors.textDim
     end
     
-    local pageHeight = 300
-    if page == 2 then pageHeight = 300
+    local pageHeight = 350
+    if page == 2 then pageHeight = 350
     elseif page == 3 then pageHeight = 400
     elseif page == 4 then pageHeight = 400
-    elseif page == 5 then pageHeight = 200
+    elseif page == 5 then pageHeight = 250
     end
     content.CanvasSize = UDim2.new(0, 0, 0, pageHeight)
 end
@@ -819,26 +1212,32 @@ end)
 
 -- ================ FUNÇÕES DOS BOTÕES ================
 
-local function updateWorldInfo()
-    local world, color = detectLeafWorld()
-    worldName.Text = world
-    worldName.TextColor3 = color
-    worldStatus.Text = inLeafWorld and "✅ No mundo certo" or "❌ Fora do mundo"
+local function updateWorldsInfo()
+    detectAllWorlds()
+    worldName.Text = currentWorld
+    worldName.TextColor3 = currentWorldColor
+    
+    local worldsText = "MUNDOS DETECTADOS:\n\n"
+    if #worlds == 0 then
+        worldsText = worldsText .. "Nenhum mundo identificado"
+    else
+        for i, world in ipairs(worlds) do
+            worldsText = worldsText .. "• " .. world.name .. "\n"
+        end
+    end
+    worldsList.Text = worldsText
+    
     gems, gold = getGemsAndGold()
     gemsValue.Text = tostring(gems)
     goldValue.Text = tostring(gold)
 end
 
 local function updateStarsList()
-    if not inLeafWorld then
-        starsList.Text = "🚫 FORA DO LEAF WORLD\n\nEntre no Leaf World para ver as Stars"
-        return
-    end
-    
     stars = findStars()
-    local text = "STARS: " .. #stars .. "/6\n\n"
+    local text = "STARS ENCONTRADAS: " .. #stars .. "\n\n"
+    
     if #stars == 0 then
-        text = text .. "Nenhuma Star encontrada.\nProcure por objetos chamados 'Star'"
+        text = text .. "Nenhuma Star encontrada.\n\nUse o botão DEBUG para investigar."
     else
         for i, star in ipairs(stars) do
             local dist = "?"
@@ -850,7 +1249,9 @@ local function updateStarsList()
         end
         selectedStar = stars[1]
         spinStarBtn.Text = "🎯 GIRAR " .. stars[1].Name
+        starInfo.Text = "Selecionada: " .. stars[1].Name
     end
+    
     starsList.Text = text
 end
 
@@ -898,8 +1299,8 @@ local function updateMobsList()
         healthLabel.Font = Enum.Font.Gotham
         healthLabel.TextSize = 12
         
-        local bossLabel = mob.IsBoss and Instance.new("TextLabel") or nil
-        if bossLabel then
+        if mob.IsBoss then
+            local bossLabel = Instance.new("TextLabel")
             bossLabel.Parent = btn
             bossLabel.BackgroundTransparency = 1
             bossLabel.Size = UDim2.new(0, 60, 1, 0)
@@ -936,10 +1337,10 @@ local function updateUnitsList()
         noUnits.BackgroundTransparency = 1
         noUnits.Size = UDim2.new(1, 0, 0, 50)
         noUnits.Position = UDim2.new(0, 0, 0, 10)
-        noUnits.Text = "Nenhuma unit encontrada"
+        noUnits.Text = "Nenhuma unit encontrada no seu inventário"
         noUnits.TextColor3 = colors.textDim
         noUnits.Font = Enum.Font.Gotham
-        noUnits.TextSize = 14
+        noUnits.TextSize = 13
         return
     end
     
@@ -982,7 +1383,7 @@ local function updateUnitsList()
     unitsScrolling.CanvasSize = UDim2.new(0, 0, 0, #units * 40 + 20)
 end
 
--- Conexões
+-- Conexões dos botões
 refreshStarsBtn.MouseButton1Click:Connect(updateStarsList)
 refreshMobsBtn.MouseButton1Click:Connect(updateMobsList)
 refreshUnitsBtn.MouseButton1Click:Connect(updateUnitsList)
@@ -990,7 +1391,38 @@ equipBestBtn.MouseButton1Click:Connect(equipBestUnit)
 
 spinStarBtn.MouseButton1Click:Connect(function()
     if selectedStar then
-        spinStar(selectedStar)
+        if spinStar(selectedStar) then
+            starsList.Text = "✅ GIRADO: " .. selectedStar.Name .. "\n\n" .. starsList.Text
+        else
+            starsList.Text = "❌ FALHOU: " .. selectedStar.Name .. "\n\n" .. starsList.Text
+        end
+        updateStarsList()
+    else
+        updateStarsList()
+    end
+end)
+
+autoSpinBtn.MouseButton1Click:Connect(function()
+    local spinActive = false
+    if autoSpinBtn.Text == "⚡ AUTO SPIN" then
+        autoSpinBtn.Text = "⏹️ PARAR SPIN"
+        autoSpinBtn.BackgroundColor3 = colors.danger
+        spinActive = true
+        
+        task.spawn(function()
+            while spinActive do
+                stars = findStars()
+                for _, star in ipairs(stars) do
+                    spinStar(star)
+                    task.wait(0.5)
+                end
+                task.wait(1)
+            end
+        end)
+    else
+        autoSpinBtn.Text = "⚡ AUTO SPIN"
+        autoSpinBtn.BackgroundColor3 = colors.tertiary
+        spinActive = false
     end
 end)
 
@@ -999,74 +1431,45 @@ farmToggleBtn.MouseButton1Click:Connect(function()
         stopFarming()
         farmToggleBtn.Text = "▶️ INICIAR FARM"
         farmToggleBtn.BackgroundColor3 = colors.tertiary
+        farmStatus.Text = "Status: Parado"
+        farmStatus.TextColor3 = colors.textDim
     else
+        if not selectedMob then
+            farmInfo.Text = "ERRO: Selecione um mob primeiro!"
+            return
+        end
         startFarming()
         farmToggleBtn.Text = "⏹️ PARAR FARM"
         farmToggleBtn.BackgroundColor3 = colors.danger
+        farmStatus.Text = "Status: Ativo - Farmando " .. selectedMob.Name
+        farmStatus.TextColor3 = colors.success
     end
 end)
 
--- Bypass (vamos adicionar uma página simples de bypass)
-local bypassToggleBtn = Instance.new("TextButton")
-bypassToggleBtn.Parent = mainFrame -- Você pode adicionar em uma página específica
-bypassToggleBtn.BackgroundColor3 = colors.tertiary
-bypassToggleBtn.Size = UDim2.new(0, 150, 0, 30)
-bypassToggleBtn.Position = UDim2.new(0.5, -75, 0, 350)
-bypassToggleBtn.Text = "ATIVAR BYPASS"
-bypassToggleBtn.TextColor3 = colors.text
-bypassToggleBtn.Font = Enum.Font.GothamBold
-bypassToggleBtn.TextSize = 11
-
-local bypassToggleCorner = Instance.new("UICorner")
-bypassToggleCorner.CornerRadius = UDim.new(0, 6)
-bypassToggleCorner.Parent = bypassToggleBtn
-
-bypassToggleBtn.MouseButton1Click:Connect(function()
+bypassBtn.MouseButton1Click:Connect(function()
     toggleBypass()
     if bypassActive then
-        bypassToggleBtn.Text = "BYPASS ATIVO"
-        bypassToggleBtn.BackgroundColor3 = colors.success
+        bypassBtn.Text = "✅ BYPASS ATIVO"
+        bypassBtn.BackgroundColor3 = colors.success
     else
-        bypassToggleBtn.Text = "ATIVAR BYPASS"
-        bypassToggleBtn.BackgroundColor3 = colors.tertiary
+        bypassBtn.Text = "🛡️ ATIVAR BYPASS"
+        bypassBtn.BackgroundColor3 = colors.tertiary
     end
-end)
-
--- Fechar
-local closeBtn = Instance.new("TextButton")
-closeBtn.Parent = topBar
-closeBtn.BackgroundColor3 = colors.danger
-closeBtn.Size = UDim2.new(0, 25, 0, 25)
-closeBtn.Position = UDim2.new(1, -30, 0.5, -12.5)
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = colors.text
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
-closeCorner.Parent = closeBtn
-
-closeBtn.MouseButton1Click:Connect(function()
-    if farmActive then
-        stopFarming()
-    end
-    screenGui:Destroy()
 end)
 
 -- Atualizações automáticas
 task.spawn(function()
     while true do
-        updateWorldInfo()
-        if page2.Visible and inLeafWorld then
-            updateStarsList()
-        end
-        task.wait(2)
+        updateWorldsInfo()
+        task.wait(3)
     end
 end)
 
 task.spawn(function()
     while true do
+        if page2.Visible then
+            updateStarsList()
+        end
         if page3.Visible then
             updateMobsList()
         end
@@ -1078,10 +1481,11 @@ task.spawn(function()
 end)
 
 -- Inicialização
-updateWorldInfo()
+updateWorldsInfo()
 updateStarsList()
 updateMobsList()
 updateUnitsList()
 switchPage(1)
 
-print("✅ Stelk Hub v12.0 - Auto Farm carregado!")
+print("✅ Stelk Hub v13.0 - Ultimate carregado!")
+print("📌 Mundos detectados | Units do inventário | Stars com debug")
