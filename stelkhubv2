@@ -1,59 +1,72 @@
 --[[
-    STELK HUB - LEAF VILLAGE
-    Versão: 6.2 - CORREÇÕES
-    - Fly com direções corretas
-    - Detecção de "Star" (S maiúsculo)
-    - Mundo "Leaf Village"
-    - Sistema para 6 estrelas
+    STELK HUB - LEAF WORLD
+    Versão: 7.0 - PREMIUM
+    - Design preto e branco com animações
+    - Detecção de mundo Leaf World
+    - Sistema de estrelas otimizado
+    - Página de Mobs
+    - Sem botões desnecessários
 ]]
 
 local player = game.Players.LocalPlayer
 local guiService = game:GetService("CoreGui")
 local runService = game:GetService("RunService")
 local tweenService = game:GetService("TweenService")
+local userInputService = game:GetService("UserInputService")
 
 -- ================ VARIÁVEIS ================
 
-local flyEnabled = false
 local bypassActive = false
 local spinEnabled = false
 local flySpeed = 15
 local flyConnection = nil
 local spinConnection = nil
-local currentWorld = "Leaf Village" -- Padrão
+local currentWorld = "Desconhecido"
+local inLeafWorld = false
 local gems = 0
 local gold = 0
 local selectedStar = nil
 local stars = {}
-local lastPosition = nil
-local positionHistory = {}
+local mobs = {}
 
--- ================ CORES ================
+-- ================ CORES (PRETO E BRANCO) ================
 
 local colors = {
-    background = Color3.fromRGB(10, 10, 15),
-    secondary = Color3.fromRGB(20, 20, 30),
-    accent = Color3.fromRGB(65, 105, 225),
-    accent2 = Color3.fromRGB(147, 112, 219),
-    success = Color3.fromRGB(60, 179, 113),
-    danger = Color3.fromRGB(220, 20, 60),
-    warning = Color3.fromRGB(255, 140, 0),
-    gold = Color3.fromRGB(255, 215, 0),
-    text = Color3.fromRGB(255, 255, 255),
-    textDim = Color3.fromRGB(150, 150, 150)
+    background = Color3.fromRGB(10, 10, 10),      -- Preto profundo
+    secondary = Color3.fromRGB(20, 20, 20),       -- Preto claro
+    tertiary = Color3.fromRGB(30, 30, 30),        -- Cinza escuro
+    accent = Color3.fromRGB(255, 255, 255),       -- Branco
+    accent2 = Color3.fromRGB(200, 200, 200),      -- Cinza claro
+    success = Color3.fromRGB(180, 180, 180),      -- Cinza para sucesso
+    danger = Color3.fromRGB(100, 100, 100),       -- Cinza escuro para perigo
+    warning = Color3.fromRGB(150, 150, 150),      -- Cinza médio
+    text = Color3.fromRGB(255, 255, 255),         -- Branco
+    textDim = Color3.fromRGB(150, 150, 150)       -- Cinza
 }
 
--- ================ DETECÇÃO DE MUNDO ================
+-- ================ DETECÇÃO DE MUNDO LEAF WORLD ================
 
-local function detectWorld()
-    -- Verificar se é Leaf Village
+local function detectLeafWorld()
+    local leafKeywords = {
+        "leaf", "village", "konoha", "naruto", "hokage",
+        "folha", "kakashi", "sasuke", "sakura", "chakra"
+    }
+    
+    local found = false
     for _, obj in ipairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
-        if name:find("leaf") or name:find("village") or name:find("konoha") then
-            return "🍃 Leaf Village", colors.success
+        for _, kw in ipairs(leafKeywords) do
+            if name:find(kw) then
+                found = true
+                break
+            end
         end
+        if found then break end
     end
-    return "🍃 Leaf Village", colors.success -- Padrão
+    
+    inLeafWorld = found
+    return found and "🍃 Leaf World" or "❌ Fora do Leaf World", 
+           found and colors.success or colors.danger
 end
 
 -- ================ DETECÇÃO DE GEMS E GOLD ================
@@ -65,67 +78,60 @@ local function getGemsAndGold()
     if player:FindFirstChild("leaderstats") then
         for _, child in ipairs(player.leaderstats:GetChildren()) do
             local name = child.Name:lower()
-            if name:find("gem") or name:find("gema") or name:find("diamond") then
+            if name:find("gem") or name:find("gema") then
                 gems = child.Value or 0
-            elseif name:find("gold") or name:find("ouro") or name:find("coin") then
+            elseif name:find("gold") or name:find("coin") then
                 gold = child.Value or 0
             end
-        end
-    end
-
-    for _, obj in ipairs(player:GetChildren()) do
-        if obj:IsA("NumberValue") then
-            local name = obj.Name:lower()
-            if name:find("gem") then gems = obj.Value end
-            if name:find("gold") then gold = obj.Value end
         end
     end
 
     return gems, gold
 end
 
--- ================ SISTEMA DE STARS ================
+-- ================ SISTEMA DE STARS (OTIMIZADO) ================
 
 local function findStars()
     local found = {}
     
-    -- Procurar por "Star" com S maiúsculo (e variações)
+    -- Só procura estrelas se estiver no Leaf World
+    if not inLeafWorld then
+        return found
+    end
+    
+    -- Procura por objetos com nome "Star" ou que contenham "Star"
     for _, obj in ipairs(workspace:GetDescendants()) do
-        -- Verificar nome exato "Star" ou começa com "Star"
+        -- Verifica nome exato "Star" ou começa com "Star"
         if obj.Name == "Star" or obj.Name:sub(1,4) == "Star" then
             if obj:IsA("BasePart") or obj:IsA("Model") then
                 table.insert(found, obj)
             end
         end
         
-        -- Verificar ClickDetectors com pais chamado Star
+        -- Procura por ClickDetectors
         if obj:IsA("ClickDetector") and obj.Parent then
             if obj.Parent.Name == "Star" or obj.Parent.Name:sub(1,4) == "Star" then
                 table.insert(found, obj.Parent)
             end
         end
+        
+        -- Limita a 6 estrelas
+        if #found >= 6 then break end
     end
     
-    -- Limitar a 6 estrelas
-    local limited = {}
-    for i = 1, math.min(6, #found) do
-        table.insert(limited, found[i])
-    end
-    
-    return limited
+    return found
 end
 
 local function spinStar(star)
     if not star then return false end
 
-    -- Método 1: ClickDetector
+    -- Tenta diferentes métodos de interação
     local detector = star:FindFirstChildOfClass("ClickDetector")
     if detector then
         fireclickdetector(detector)
         return true
     end
 
-    -- Método 2: ProximityPrompt
     local prompt = star:FindFirstChildOfClass("ProximityPrompt")
     if prompt then
         prompt:InputHoldBegin()
@@ -134,101 +140,43 @@ local function spinStar(star)
         return true
     end
 
-    -- Método 3: TouchInterest
-    local touch = star:FindFirstChildOfClass("TouchTransmitter")
-    if touch and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        firetouchinterest(player.Character.HumanoidRootPart, star, 0)
-        task.wait(0.1)
-        firetouchinterest(player.Character.HumanoidRootPart, star, 1)
-        return true
+    -- Se tiver RemoteEvent
+    for _, child in ipairs(star:GetChildren()) do
+        if child:IsA("RemoteEvent") and child.Name:lower():find("spin") then
+            child:FireServer()
+            return true
+        end
     end
 
     return false
 end
 
--- ================ FLY CORRIGIDO (DIREÇÕES CERTAS) ================
+-- ================ SISTEMA DE MOBS ================
 
-local function toggleFly()
-    if flyEnabled then
-        if flyConnection then
-            flyConnection:Disconnect()
-            flyConnection = nil
-        end
-
-        if player.Character then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
-                humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-                humanoid.PlatformStand = false
+local function findMobs()
+    local found = {}
+    local mobKeywords = {
+        "mob", "enemy", "npc", "boss", "monster",
+        "ninja", "samurai", "bandit", "creep"
+    }
+    
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local name = obj.Name:lower()
+            for _, kw in ipairs(mobKeywords) do
+                if name:find(kw) then
+                    -- Verifica se tem Humanoid (é um ser vivo)
+                    if obj:FindFirstChildOfClass("Humanoid") then
+                        table.insert(found, obj)
+                    end
+                    break
+                end
             end
         end
-
-        flyEnabled = false
-        return
+        if #found >= 10 then break end
     end
-
-    flyEnabled = true
-    lastPosition = nil
-    positionHistory = {}
-
-    flyConnection = runService.Heartbeat:Connect(function(dt)
-        if not flyEnabled or not player.Character then return end
-
-        local root = player.Character:FindFirstChild("HumanoidRootPart")
-        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-
-        if not root or not humanoid then return end
-
-        humanoid.PlatformStand = true
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-
-        -- PEGAR DIREÇÃO DO JOYSTICK (CORRIGIDO)
-        local moveDir = humanoid.MoveDirection
-        local camera = workspace.CurrentCamera
-
-        if moveDir.Magnitude > 0.1 then
-            -- CORREÇÃO: Agora as direções estão certas!
-            -- Frente: moveDir.Z positivo = LookVector
-            -- Trás: moveDir.Z negativo = -LookVector
-            -- Direita: moveDir.X positivo = RightVector
-            -- Esquerda: moveDir.X negativo = -RightVector
-            -- Cima: moveDir.Y positivo = UP (verdadeiro)
-            -- Baixo: moveDir.Y negativo = -UP
-            
-            local forward = camera.CFrame.LookVector * moveDir.Z
-            local right = camera.CFrame.RightVector * moveDir.X
-            local up = camera.CFrame.UpVector * moveDir.Y -- AGORA USA UpVector, não Vector3.new(0, moveDir.Y, 0)
-            
-            -- Combinar vetores
-            local moveVector = forward + right + up
-            
-            -- Normalizar e aplicar velocidade
-            if moveVector.Magnitude > 0 then
-                moveVector = moveVector.Unit * flySpeed * dt * 20
-                root.CFrame = root.CFrame + moveVector
-            end
-        end
-
-        -- Neutralizar gravidade (sempre um pouco para cima)
-        root.CFrame = root.CFrame + Vector3.new(0, 0.15, 0)
-
-        -- Anti-kick: limitar velocidade
-        if root.Velocity then
-            root.Velocity = Vector3.new(
-                math.clamp(root.Velocity.X, -50, 50),
-                math.clamp(root.Velocity.Y, -50, 50),
-                math.clamp(root.Velocity.Z, -50, 50)
-            )
-        end
-
-        -- Histórico de posição
-        table.insert(positionHistory, root.Position)
-        if #positionHistory > 10 then
-            table.remove(positionHistory, 1)
-        end
-    end)
+    
+    return found
 end
 
 -- ================ BYPASS ================
@@ -249,28 +197,20 @@ local function toggleBypass()
 
             mt.__namecall = newcclosure(function(self, ...)
                 local method = getnamecallmethod()
-
                 if method == "FireServer" then
                     local remoteName = tostring(self):lower()
-                    if remoteName:find("anticheat") or remoteName:find("gravity") or remoteName:find("position") then
+                    if remoteName:find("anticheat") then
                         return
                     end
                 end
-
                 return oldNamecall(self, ...)
             end)
-
             setreadonly(mt, true)
-        end
-
-        local connections = getconnections and getconnections(game:GetService("ScriptContext").Error) or {}
-        for _, conn in ipairs(connections) do
-            conn:Disable()
         end
     end)
 end
 
--- ================ CRIAR GUI ================
+-- ================ CRIAR GUI (PRETO E BRANCO) ================
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "StelkHub"
@@ -278,94 +218,146 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
+-- Frame principal
 local mainFrame = Instance.new("Frame")
 mainFrame.Parent = screenGui
 mainFrame.BackgroundColor3 = colors.background
 mainFrame.BorderSizePixel = 0
-mainFrame.Size = UDim2.new(0, 400, 0, 500)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+mainFrame.Size = UDim2.new(0, 380, 0, 480)
+mainFrame.Position = UDim2.new(0.5, -190, 0.5, -240)
 mainFrame.Active = true
 mainFrame.Draggable = true
+mainFrame.BackgroundTransparency = 0
+mainFrame.ClipsDescendants = true
 
+-- Cantos arredondados
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 15)
 mainCorner.Parent = mainFrame
+
+-- Borda branca
+local border = Instance.new("Frame")
+border.Parent = mainFrame
+border.BackgroundColor3 = colors.accent
+border.BackgroundTransparency = 0.8
+border.Size = UDim2.new(1, 0, 0, 2)
+border.Position = UDim2.new(0, 0, 0, 0)
+border.BorderSizePixel = 0
 
 -- Top Bar
 local topBar = Instance.new("Frame")
 topBar.Parent = mainFrame
 topBar.BackgroundColor3 = colors.secondary
 topBar.Size = UDim2.new(1, 0, 0, 50)
+topBar.BorderSizePixel = 0
 
 local topCorner = Instance.new("UICorner")
 topCorner.CornerRadius = UDim.new(0, 15)
 topCorner.Parent = topBar
 
+-- Título com animação
 local title = Instance.new("TextLabel")
 title.Parent = topBar
 title.BackgroundTransparency = 1
 title.Size = UDim2.new(0, 200, 1, 0)
 title.Position = UDim2.new(0, 15, 0, 0)
 title.Text = "STELK HUB"
-title.TextColor3 = colors.text
+title.TextColor3 = colors.accent
 title.Font = Enum.Font.GothamBold
-title.TextSize = 20
+title.TextSize = 22
 title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Animação do título
+local titleAnim = tweenService:Create(title, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    TextColor3 = colors.textDim
+})
+titleAnim:Play()
 
 -- Botão fechar
 local closeBtn = Instance.new("TextButton")
 closeBtn.Parent = topBar
-closeBtn.BackgroundColor3 = colors.danger
-closeBtn.Size = UDim2.new(0, 25, 0, 25)
-closeBtn.Position = UDim2.new(1, -35, 0.5, -12.5)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = colors.text
+closeBtn.BackgroundColor3 = colors.tertiary
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -40, 0.5, -15)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = colors.textDim
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 16
+closeBtn.BackgroundTransparency = 0
 
 local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.CornerRadius = UDim.new(0, 8)
 closeCorner.Parent = closeBtn
+
+-- Animação do botão fechar
+closeBtn.MouseEnter:Connect(function()
+    tweenService:Create(closeBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.danger}):Play()
+end)
+closeBtn.MouseLeave:Connect(function()
+    tweenService:Create(closeBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
 
 -- Abas
 local tabFrame = Instance.new("Frame")
 tabFrame.Parent = mainFrame
-tabFrame.BackgroundColor3 = colors.secondary
-tabFrame.Size = UDim2.new(1, 0, 0, 40)
+tabFrame.BackgroundColor3 = colors.background
+tabFrame.Size = UDim2.new(1, 0, 0, 45)
 tabFrame.Position = UDim2.new(0, 0, 0, 50)
+tabFrame.BorderSizePixel = 0
 
 local function createTab(name, pos)
     local btn = Instance.new("TextButton")
     btn.Parent = tabFrame
-    btn.BackgroundColor3 = colors.secondary
-    btn.Size = UDim2.new(0, 70, 0, 30)
-    btn.Position = UDim2.new(0, pos, 0.5, -15)
+    btn.BackgroundColor3 = colors.background
+    btn.Size = UDim2.new(0, 70, 0, 35)
+    btn.Position = UDim2.new(0, pos, 0.5, -17.5)
     btn.Text = name
     btn.TextColor3 = colors.textDim
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 14
-
+    btn.AutoButtonColor = false
+    
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(0, 8)
     btnCorner.Parent = btn
-
+    
+    -- Animações das abas
+    btn.MouseEnter:Connect(function()
+        tweenService:Create(btn, TweenInfo.new(0.2), {TextColor3 = colors.accent}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        if btn.TextColor3 ~= colors.accent then
+            tweenService:Create(btn, TweenInfo.new(0.2), {TextColor3 = colors.textDim}):Play()
+        end
+    end)
+    
     return btn
 end
 
-local tab1 = createTab("INÍCIO", 10)
-local tab2 = createTab("STARS", 90)
-local tab3 = createTab("FLY", 170)
-local tab4 = createTab("BYPASS", 250)
-local tab5 = createTab("CRÉDITOS", 330)
+local tab1 = createTab("MUNDO", 15)
+local tab2 = createTab("STARS", 95)
+local tab3 = createTab("MOBS", 175)
+local tab4 = createTab("BYPASS", 255)
+local tab5 = createTab("SOBRE", 335)
+
+-- Indicador de página
+local pageIndicator = Instance.new("Frame")
+pageIndicator.Parent = tabFrame
+pageIndicator.BackgroundColor3 = colors.accent
+pageIndicator.Size = UDim2.new(0, 50, 0, 2)
+pageIndicator.Position = UDim2.new(0, 30, 1, -5)
+pageIndicator.BorderSizePixel = 0
 
 -- Conteúdo
 local content = Instance.new("Frame")
 content.Parent = mainFrame
 content.BackgroundColor3 = colors.background
-content.Size = UDim2.new(1, 0, 1, -90)
-content.Position = UDim2.new(0, 0, 0, 90)
+content.Size = UDim2.new(1, 0, 1, -95)
+content.Position = UDim2.new(0, 0, 0, 95)
+content.BorderSizePixel = 0
+content.ClipsDescendants = true
 
--- ================ PÁGINA 1: INÍCIO ================
+-- ================ PÁGINA 1: MUNDO ================
 
 local page1 = Instance.new("Frame")
 page1.Parent = content
@@ -373,34 +365,43 @@ page1.BackgroundTransparency = 1
 page1.Size = UDim2.new(1, 0, 1, 0)
 page1.Visible = true
 
--- Card do Mundo
+-- Card do Mundo (com animação)
 local worldCard = Instance.new("Frame")
 worldCard.Parent = page1
 worldCard.BackgroundColor3 = colors.secondary
-worldCard.Size = UDim2.new(0, 360, 0, 70)
-worldCard.Position = UDim2.new(0.5, -180, 0, 15)
+worldCard.Size = UDim2.new(0, 340, 0, 90)
+worldCard.Position = UDim2.new(0.5, -170, 0, 20)
+worldCard.BackgroundTransparency = 0
 
 local worldCorner = Instance.new("UICorner")
-worldCorner.CornerRadius = UDim.new(0, 10)
+worldCorner.CornerRadius = UDim.new(0, 12)
 worldCorner.Parent = worldCard
+
+-- Animação de entrada do card
+worldCard.Size = UDim2.new(0, 0, 0, 0)
+worldCard.Position = UDim2.new(0.5, 0, 0, 50)
+tweenService:Create(worldCard, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 340, 0, 90),
+    Position = UDim2.new(0.5, -170, 0, 20)
+}):Play()
 
 local worldIcon = Instance.new("TextLabel")
 worldIcon.Parent = worldCard
 worldIcon.BackgroundTransparency = 1
 worldIcon.Size = UDim2.new(0, 40, 1, 0)
-worldIcon.Position = UDim2.new(0, 10, 0, 0)
+worldIcon.Position = UDim2.new(0, 15, 0, 0)
 worldIcon.Text = "🍃"
-worldIcon.TextColor3 = colors.text
+worldIcon.TextColor3 = colors.accent
 worldIcon.Font = Enum.Font.GothamBold
-worldIcon.TextSize = 30
+worldIcon.TextSize = 35
 
 local worldName = Instance.new("TextLabel")
 worldName.Parent = worldCard
 worldName.BackgroundTransparency = 1
-worldName.Size = UDim2.new(0, 250, 0, 25)
-worldName.Position = UDim2.new(0, 60, 0, 10)
-worldName.Text = "Leaf Village"
-worldName.TextColor3 = colors.success
+worldName.Size = UDim2.new(0, 250, 0, 30)
+worldName.Position = UDim2.new(0, 65, 0, 15)
+worldName.Text = "Detectando..."
+worldName.TextColor3 = colors.accent
 worldName.Font = Enum.Font.GothamBold
 worldName.TextSize = 18
 worldName.TextXAlignment = Enum.TextXAlignment.Left
@@ -408,31 +409,40 @@ worldName.TextXAlignment = Enum.TextXAlignment.Left
 local worldStatus = Instance.new("TextLabel")
 worldStatus.Parent = worldCard
 worldStatus.BackgroundTransparency = 1
-worldStatus.Size = UDim2.new(0, 250, 0, 20)
-worldStatus.Position = UDim2.new(0, 60, 0, 40)
-worldStatus.Text = "Detectado automaticamente"
+worldStatus.Size = UDim2.new(0, 250, 0, 25)
+worldStatus.Position = UDim2.new(0, 65, 0, 45)
+worldStatus.Text = "Aguardando detecção..."
 worldStatus.TextColor3 = colors.textDim
 worldStatus.Font = Enum.Font.Gotham
-worldStatus.TextSize = 12
+worldStatus.TextSize = 13
 worldStatus.TextXAlignment = Enum.TextXAlignment.Left
 
 -- Card de Recursos
 local resourcesCard = Instance.new("Frame")
 resourcesCard.Parent = page1
 resourcesCard.BackgroundColor3 = colors.secondary
-resourcesCard.Size = UDim2.new(0, 360, 0, 80)
-resourcesCard.Position = UDim2.new(0.5, -180, 0, 100)
+resourcesCard.Size = UDim2.new(0, 340, 0, 70)
+resourcesCard.Position = UDim2.new(0.5, -170, 0, 125)
+resourcesCard.BackgroundTransparency = 0
 
 local resourcesCorner = Instance.new("UICorner")
-resourcesCorner.CornerRadius = UDim.new(0, 10)
+resourcesCorner.CornerRadius = UDim.new(0, 12)
 resourcesCorner.Parent = resourcesCard
+
+-- Animação do card de recursos
+resourcesCard.Size = UDim2.new(0, 0, 0, 0)
+resourcesCard.Position = UDim2.new(0.5, 0, 0, 155)
+tweenService:Create(resourcesCard, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 340, 0, 70),
+    Position = UDim2.new(0.5, -170, 0, 125)
+}):Play()
 
 -- Gems
 local gemsFrame = Instance.new("Frame")
 gemsFrame.Parent = resourcesCard
-gemsFrame.BackgroundColor3 = colors.background
-gemsFrame.Size = UDim2.new(0, 160, 0, 50)
-gemsFrame.Position = UDim2.new(0, 15, 0, 15)
+gemsFrame.BackgroundColor3 = colors.tertiary
+gemsFrame.Size = UDim2.new(0, 150, 0, 45)
+gemsFrame.Position = UDim2.new(0, 15, 0.5, -22.5)
 
 local gemsCorner = Instance.new("UICorner")
 gemsCorner.CornerRadius = UDim.new(0, 8)
@@ -442,40 +452,29 @@ local gemsIcon = Instance.new("TextLabel")
 gemsIcon.Parent = gemsFrame
 gemsIcon.BackgroundTransparency = 1
 gemsIcon.Size = UDim2.new(0, 30, 1, 0)
-gemsIcon.Position = UDim2.new(0, 5, 0, 0)
+gemsIcon.Position = UDim2.new(0, 8, 0, 0)
 gemsIcon.Text = "💎"
-gemsIcon.TextColor3 = colors.text
+gemsIcon.TextColor3 = colors.accent
 gemsIcon.Font = Enum.Font.GothamBold
 gemsIcon.TextSize = 20
-
-local gemsLabel = Instance.new("TextLabel")
-gemsLabel.Parent = gemsFrame
-gemsLabel.BackgroundTransparency = 1
-gemsLabel.Size = UDim2.new(0, 60, 0, 20)
-gemsLabel.Position = UDim2.new(0, 40, 0, 5)
-gemsLabel.Text = "GEMS"
-gemsLabel.TextColor3 = colors.textDim
-gemsLabel.Font = Enum.Font.Gotham
-gemsLabel.TextSize = 10
-gemsLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local gemsValue = Instance.new("TextLabel")
 gemsValue.Parent = gemsFrame
 gemsValue.BackgroundTransparency = 1
-gemsValue.Size = UDim2.new(0, 80, 0, 20)
-gemsValue.Position = UDim2.new(0, 40, 0, 25)
+gemsValue.Size = UDim2.new(0, 100, 0, 25)
+gemsValue.Position = UDim2.new(0, 45, 0.5, -12.5)
 gemsValue.Text = "0"
 gemsValue.TextColor3 = colors.accent
 gemsValue.Font = Enum.Font.GothamBold
-gemsValue.TextSize = 16
+gemsValue.TextSize = 18
 gemsValue.TextXAlignment = Enum.TextXAlignment.Left
 
 -- Gold
 local goldFrame = Instance.new("Frame")
 goldFrame.Parent = resourcesCard
-goldFrame.BackgroundColor3 = colors.background
-goldFrame.Size = UDim2.new(0, 160, 0, 50)
-goldFrame.Position = UDim2.new(1, -175, 0, 15)
+goldFrame.BackgroundColor3 = colors.tertiary
+goldFrame.Size = UDim2.new(0, 150, 0, 45)
+goldFrame.Position = UDim2.new(1, -165, 0.5, -22.5)
 
 local goldCorner = Instance.new("UICorner")
 goldCorner.CornerRadius = UDim.new(0, 8)
@@ -485,70 +484,33 @@ local goldIcon = Instance.new("TextLabel")
 goldIcon.Parent = goldFrame
 goldIcon.BackgroundTransparency = 1
 goldIcon.Size = UDim2.new(0, 30, 1, 0)
-goldIcon.Position = UDim2.new(0, 5, 0, 0)
+goldIcon.Position = UDim2.new(0, 8, 0, 0)
 goldIcon.Text = "🪙"
-goldIcon.TextColor3 = colors.gold
+goldIcon.TextColor3 = colors.accent
 goldIcon.Font = Enum.Font.GothamBold
 goldIcon.TextSize = 20
-
-local goldLabel = Instance.new("TextLabel")
-goldLabel.Parent = goldFrame
-goldLabel.BackgroundTransparency = 1
-goldLabel.Size = UDim2.new(0, 60, 0, 20)
-goldLabel.Position = UDim2.new(0, 40, 0, 5)
-goldLabel.Text = "GOLD"
-goldLabel.TextColor3 = colors.textDim
-goldLabel.Font = Enum.Font.Gotham
-goldLabel.TextSize = 10
-goldLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local goldValue = Instance.new("TextLabel")
 goldValue.Parent = goldFrame
 goldValue.BackgroundTransparency = 1
-goldValue.Size = UDim2.new(0, 80, 0, 20)
-goldValue.Position = UDim2.new(0, 40, 0, 25)
+goldValue.Size = UDim2.new(0, 100, 0, 25)
+goldValue.Position = UDim2.new(0, 45, 0.5, -12.5)
 goldValue.Text = "0"
-goldValue.TextColor3 = colors.gold
+goldValue.TextColor3 = colors.accent
 goldValue.Font = Enum.Font.GothamBold
-goldValue.TextSize = 16
+goldValue.TextSize = 18
 goldValue.TextXAlignment = Enum.TextXAlignment.Left
 
--- Botões de Ação
-local actionsFrame = Instance.new("Frame")
-actionsFrame.Parent = page1
-actionsFrame.BackgroundTransparency = 1
-actionsFrame.Size = UDim2.new(0, 360, 0, 150)
-actionsFrame.Position = UDim2.new(0.5, -180, 0, 200)
-
-local function createActionButton(name, posX, posY, color)
-    local btn = Instance.new("TextButton")
-    btn.Parent = actionsFrame
-    btn.BackgroundColor3 = color or colors.secondary
-    btn.Size = UDim2.new(0, 110, 0, 35)
-    btn.Position = UDim2.new(0, posX, 0, posY)
-    btn.Text = name
-    btn.TextColor3 = colors.text
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = btn
-
-    return btn
-end
-
-local verifyBtn = createActionButton("VERIFY", 0, 0, colors.accent)
-local mountsBtn = createActionButton("MOUNTS", 125, 0, colors.accent2)
-local questBtn = createActionButton("QUEST", 250, 0, colors.warning)
-
-local settingsBtn = createActionButton("SETTINGS", 0, 45, colors.secondary)
-local codesBtn = createActionButton("CODES", 125, 45, colors.secondary)
-local profileBtn = createActionButton("PROFILE", 250, 45, colors.secondary)
-
-local teleportBtn = createActionButton("TELEPORT", 0, 90, colors.success)
-local shopBtn = createActionButton("SHOP", 125, 90, colors.success)
-local dailyBtn = createActionButton("DAILY", 250, 90, colors.success)
+-- Aviso do Leaf World
+local worldWarning = Instance.new("TextLabel")
+worldWarning.Parent = page1
+worldWarning.BackgroundTransparency = 1
+worldWarning.Size = UDim2.new(0, 340, 0, 30)
+worldWarning.Position = UDim2.new(0.5, -170, 0, 210)
+worldWarning.Text = "⭐ Estrelas disponíveis apenas no Leaf World"
+worldWarning.TextColor3 = colors.textDim
+worldWarning.Font = Enum.Font.Gotham
+worldWarning.TextSize = 12
 
 -- ================ PÁGINA 2: STARS ================
 
@@ -561,78 +523,114 @@ page2.Visible = false
 local starsTitle = Instance.new("TextLabel")
 starsTitle.Parent = page2
 starsTitle.BackgroundTransparency = 1
-starsTitle.Size = UDim2.new(1, -20, 0, 30)
+starsTitle.Size = UDim2.new(1, -20, 0, 35)
 starsTitle.Position = UDim2.new(0, 10, 0, 10)
-starsTitle.Text = "⭐ STARS SYSTEM (Máx 6)"
-starsTitle.TextColor3 = colors.gold
+starsTitle.Text = "⭐ SISTEMA DE STARS"
+starsTitle.TextColor3 = colors.accent
 starsTitle.Font = Enum.Font.GothamBold
 starsTitle.TextSize = 20
 starsTitle.TextXAlignment = Enum.TextXAlignment.Left
 
+-- Status do mundo
+local worldStatusStars = Instance.new("TextLabel")
+worldStatusStars.Parent = page2
+worldStatusStars.BackgroundTransparency = 1
+worldStatusStars.Size = UDim2.new(1, -20, 0, 20)
+worldStatusStars.Position = UDim2.new(0, 10, 0, 45)
+worldStatusStars.Text = "Verificando mundo..."
+worldStatusStars.TextColor3 = colors.textDim
+worldStatusStars.Font = Enum.Font.Gotham
+worldStatusStars.TextSize = 12
+worldStatusStars.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Lista de Stars
 local starsList = Instance.new("TextLabel")
 starsList.Parent = page2
 starsList.BackgroundColor3 = colors.secondary
-starsList.Size = UDim2.new(0, 360, 0, 150)
-starsList.Position = UDim2.new(0.5, -180, 0, 50)
-starsList.Text = "Procurando Stars...\n\nAguardando detecção..."
+starsList.Size = UDim2.new(0, 340, 0, 150)
+starsList.Position = UDim2.new(0.5, -170, 0, 75)
+starsList.Text = "Aguardando detecção...\n\nEntre no Leaf World para ver as Stars"
 starsList.TextColor3 = colors.textDim
 starsList.Font = Enum.Font.Gotham
-starsList.TextSize = 12
+starsList.TextSize = 13
 starsList.TextWrapped = true
 starsList.TextXAlignment = Enum.TextXAlignment.Left
 starsList.TextYAlignment = Enum.TextYAlignment.Top
 
 local starsCorner = Instance.new("UICorner")
-starsCorner.CornerRadius = UDim.new(0, 10)
+starsCorner.CornerRadius = UDim.new(0, 12)
 starsCorner.Parent = starsList
 
+-- Botões
 local refreshStarsBtn = Instance.new("TextButton")
 refreshStarsBtn.Parent = page2
-refreshStarsBtn.BackgroundColor3 = colors.accent
-refreshStarsBtn.Size = UDim2.new(0, 110, 0, 35)
-refreshStarsBtn.Position = UDim2.new(0.5, -170, 0, 215)
+refreshStarsBtn.BackgroundColor3 = colors.tertiary
+refreshStarsBtn.Size = UDim2.new(0, 100, 0, 35)
+refreshStarsBtn.Position = UDim2.new(0.5, -155, 0, 240)
 refreshStarsBtn.Text = "🔄 ATUALIZAR"
 refreshStarsBtn.TextColor3 = colors.text
 refreshStarsBtn.Font = Enum.Font.GothamBold
-refreshStarsBtn.TextSize = 12
+refreshStarsBtn.TextSize = 11
 
 local refreshCorner = Instance.new("UICorner")
-refreshCorner.CornerRadius = UDim.new(0, 6)
+refreshCorner.CornerRadius = UDim.new(0, 8)
 refreshCorner.Parent = refreshStarsBtn
+
+-- Animação botão atualizar
+refreshStarsBtn.MouseEnter:Connect(function()
+    tweenService:Create(refreshStarsBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.accent}):Play()
+end)
+refreshStarsBtn.MouseLeave:Connect(function()
+    tweenService:Create(refreshStarsBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
 
 local spinStarBtn = Instance.new("TextButton")
 spinStarBtn.Parent = page2
-spinStarBtn.BackgroundColor3 = colors.success
-spinStarBtn.Size = UDim2.new(0, 110, 0, 35)
-spinStarBtn.Position = UDim2.new(0.5, -55, 0, 215)
+spinStarBtn.BackgroundColor3 = colors.tertiary
+spinStarBtn.Size = UDim2.new(0, 100, 0, 35)
+spinStarBtn.Position = UDim2.new(0.5, -50, 0, 240)
 spinStarBtn.Text = "🎯 GIRAR #1"
 spinStarBtn.TextColor3 = colors.text
 spinStarBtn.Font = Enum.Font.GothamBold
-spinStarBtn.TextSize = 12
+spinStarBtn.TextSize = 11
 
 local spinCorner = Instance.new("UICorner")
-spinCorner.CornerRadius = UDim.new(0, 6)
+spinCorner.CornerRadius = UDim.new(0, 8)
 spinCorner.Parent = spinStarBtn
+
+spinStarBtn.MouseEnter:Connect(function()
+    tweenService:Create(spinStarBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.accent}):Play()
+end)
+spinStarBtn.MouseLeave:Connect(function()
+    tweenService:Create(spinStarBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
 
 local autoSpinBtn = Instance.new("TextButton")
 autoSpinBtn.Parent = page2
-autoSpinBtn.BackgroundColor3 = colors.secondary
-autoSpinBtn.Size = UDim2.new(0, 110, 0, 35)
-autoSpinBtn.Position = UDim2.new(0.5, 60, 0, 215)
+autoSpinBtn.BackgroundColor3 = colors.tertiary
+autoSpinBtn.Size = UDim2.new(0, 100, 0, 35)
+autoSpinBtn.Position = UDim2.new(0.5, 55, 0, 240)
 autoSpinBtn.Text = "⚡ AUTO SPIN"
 autoSpinBtn.TextColor3 = colors.text
 autoSpinBtn.Font = Enum.Font.GothamBold
-autoSpinBtn.TextSize = 12
+autoSpinBtn.TextSize = 11
 
 local autoCorner = Instance.new("UICorner")
-autoCorner.CornerRadius = UDim.new(0, 6)
+autoCorner.CornerRadius = UDim.new(0, 8)
 autoCorner.Parent = autoSpinBtn
+
+autoSpinBtn.MouseEnter:Connect(function()
+    tweenService:Create(autoSpinBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.accent}):Play()
+end)
+autoSpinBtn.MouseLeave:Connect(function()
+    tweenService:Create(autoSpinBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
 
 local starInfo = Instance.new("TextLabel")
 starInfo.Parent = page2
 starInfo.BackgroundColor3 = colors.secondary
-starInfo.Size = UDim2.new(0, 360, 0, 40)
-starInfo.Position = UDim2.new(0.5, -180, 0, 270)
+starInfo.Size = UDim2.new(0, 340, 0, 40)
+starInfo.Position = UDim2.new(0.5, -170, 0, 290)
 starInfo.Text = "Selecione uma Star para girar"
 starInfo.TextColor3 = colors.textDim
 starInfo.Font = Enum.Font.Gotham
@@ -642,7 +640,7 @@ local infoCorner = Instance.new("UICorner")
 infoCorner.CornerRadius = UDim.new(0, 8)
 infoCorner.Parent = starInfo
 
--- ================ PÁGINA 3: FLY (CORRIGIDO) ================
+-- ================ PÁGINA 3: MOBS ================
 
 local page3 = Instance.new("Frame")
 page3.Parent = content
@@ -650,125 +648,56 @@ page3.BackgroundTransparency = 1
 page3.Size = UDim2.new(1, 0, 1, 0)
 page3.Visible = false
 
-local flyTitle = Instance.new("TextLabel")
-flyTitle.Parent = page3
-flyTitle.BackgroundTransparency = 1
-flyTitle.Size = UDim2.new(1, -20, 0, 30)
-flyTitle.Position = UDim2.new(0, 10, 0, 10)
-flyTitle.Text = "✈️ FLY MODE (CORRIGIDO)"
-flyTitle.TextColor3 = colors.accent
-flyTitle.Font = Enum.Font.GothamBold
-flyTitle.TextSize = 20
-flyTitle.TextXAlignment = Enum.TextXAlignment.Left
+local mobsTitle = Instance.new("TextLabel")
+mobsTitle.Parent = page3
+mobsTitle.BackgroundTransparency = 1
+mobsTitle.Size = UDim2.new(1, -20, 0, 35)
+mobsTitle.Position = UDim2.new(0, 10, 0, 10)
+mobsTitle.Text = "👾 MOBS PRÓXIMOS"
+mobsTitle.TextColor3 = colors.accent
+mobsTitle.Font = Enum.Font.GothamBold
+mobsTitle.TextSize = 20
+mobsTitle.TextXAlignment = Enum.TextXAlignment.Left
 
-local flyCard = Instance.new("Frame")
-flyCard.Parent = page3
-flyCard.BackgroundColor3 = colors.secondary
-flyCard.Size = UDim2.new(0, 360, 0, 200)
-flyCard.Position = UDim2.new(0.5, -180, 0, 50)
+-- Lista de Mobs
+local mobsList = Instance.new("TextLabel")
+mobsList.Parent = page3
+mobsList.BackgroundColor3 = colors.secondary
+mobsList.Size = UDim2.new(0, 340, 0, 200)
+mobsList.Position = UDim2.new(0.5, -170, 0, 55)
+mobsList.Text = "Procurando mobs próximos...\n\nAguardando detecção..."
+mobsList.TextColor3 = colors.textDim
+mobsList.Font = Enum.Font.Gotham
+mobsList.TextSize = 13
+mobsList.TextWrapped = true
+mobsList.TextXAlignment = Enum.TextXAlignment.Left
+mobsList.TextYAlignment = Enum.TextYAlignment.Top
 
-local flyCardCorner = Instance.new("UICorner")
-flyCardCorner.CornerRadius = UDim.new(0, 10)
-flyCardCorner.Parent = flyCard
+local mobsCorner = Instance.new("UICorner")
+mobsCorner.CornerRadius = UDim.new(0, 12)
+mobsCorner.Parent = mobsList
 
-local flyInstructions = Instance.new("TextLabel")
-flyInstructions.Parent = flyCard
-flyInstructions.BackgroundTransparency = 1
-flyInstructions.Size = UDim2.new(1, -20, 0, 40)
-flyInstructions.Position = UDim2.new(0, 10, 0, 10)
-flyInstructions.Text = "✅ DIREÇÕES CORRIGIDAS!\nJoystick ↑ = sobe | Joystick ↓ = desce"
-flyInstructions.TextColor3 = colors.success
-flyInstructions.Font = Enum.Font.GothamBold
-flyInstructions.TextSize = 12
-flyInstructions.TextWrapped = true
-flyInstructions.TextXAlignment = Enum.TextXAlignment.Left
+-- Botão atualizar mobs
+local refreshMobsBtn = Instance.new("TextButton")
+refreshMobsBtn.Parent = page3
+refreshMobsBtn.BackgroundColor3 = colors.tertiary
+refreshMobsBtn.Size = UDim2.new(0, 150, 0, 35)
+refreshMobsBtn.Position = UDim2.new(0.5, -75, 0, 270)
+refreshMobsBtn.Text = "🔄 ATUALIZAR MOBS"
+refreshMobsBtn.TextColor3 = colors.text
+refreshMobsBtn.Font = Enum.Font.GothamBold
+refreshMobsBtn.TextSize = 11
 
-local flyToggleBtn = Instance.new("TextButton")
-flyToggleBtn.Parent = flyCard
-flyToggleBtn.BackgroundColor3 = colors.secondary
-flyToggleBtn.Size = UDim2.new(0, 160, 0, 40)
-flyToggleBtn.Position = UDim2.new(0.5, -80, 0, 60)
-flyToggleBtn.Text = "ATIVAR FLY"
-flyToggleBtn.TextColor3 = colors.text
-flyToggleBtn.Font = Enum.Font.GothamBold
-flyToggleBtn.TextSize = 14
+local refreshMobsCorner = Instance.new("UICorner")
+refreshMobsCorner.CornerRadius = UDim.new(0, 8)
+refreshMobsCorner.Parent = refreshMobsBtn
 
-local flyToggleCorner = Instance.new("UICorner")
-flyToggleCorner.CornerRadius = UDim.new(0, 8)
-flyToggleCorner.Parent = flyToggleBtn
-
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Parent = flyCard
-speedLabel.BackgroundTransparency = 1
-speedLabel.Size = UDim2.new(0, 160, 0, 20)
-speedLabel.Position = UDim2.new(0.5, -80, 0, 110)
-speedLabel.Text = "Velocidade: 15"
-speedLabel.TextColor3 = colors.text
-speedLabel.Font = Enum.Font.Gotham
-speedLabel.TextSize = 14
-
-local speedControl = Instance.new("Frame")
-speedControl.Parent = flyCard
-speedControl.BackgroundColor3 = colors.background
-speedControl.Size = UDim2.new(0, 160, 0, 30)
-speedControl.Position = UDim2.new(0.5, -80, 0, 135)
-
-local speedControlCorner = Instance.new("UICorner")
-speedControlCorner.CornerRadius = UDim.new(0, 6)
-speedControlCorner.Parent = speedControl
-
-local speedMinus = Instance.new("TextButton")
-speedMinus.Parent = speedControl
-speedMinus.BackgroundColor3 = colors.danger
-speedMinus.Size = UDim2.new(0, 30, 0, 20)
-speedMinus.Position = UDim2.new(0, 5, 0.5, -10)
-speedMinus.Text = "-"
-speedMinus.TextColor3 = colors.text
-speedMinus.Font = Enum.Font.GothamBold
-speedMinus.TextSize = 16
-
-local speedMinusCorner = Instance.new("UICorner")
-speedMinusCorner.CornerRadius = UDim.new(0, 4)
-speedMinusCorner.Parent = speedMinus
-
-local speedValue = Instance.new("TextLabel")
-speedValue.Parent = speedControl
-speedValue.BackgroundColor3 = colors.secondary
-speedValue.Size = UDim2.new(0, 50, 0, 20)
-speedValue.Position = UDim2.new(0.5, -25, 0.5, -10)
-speedValue.Text = "15"
-speedValue.TextColor3 = colors.text
-speedValue.Font = Enum.Font.GothamBold
-speedValue.TextSize = 14
-
-local speedValueCorner = Instance.new("UICorner")
-speedValueCorner.CornerRadius = UDim.new(0, 4)
-speedValueCorner.Parent = speedValue
-
-local speedPlus = Instance.new("TextButton")
-speedPlus.Parent = speedControl
-speedPlus.BackgroundColor3 = colors.success
-speedPlus.Size = UDim2.new(0, 30, 0, 20)
-speedPlus.Position = UDim2.new(1, -35, 0.5, -10)
-speedPlus.Text = "+"
-speedPlus.TextColor3 = colors.text
-speedPlus.Font = Enum.Font.GothamBold
-speedPlus.TextSize = 16
-
-local speedPlusCorner = Instance.new("UICorner")
-speedPlusCorner.CornerRadius = UDim.new(0, 4)
-speedPlusCorner.Parent = speedPlus
-
-local flyWarning = Instance.new("TextLabel")
-flyWarning.Parent = flyCard
-flyWarning.BackgroundTransparency = 1
-flyWarning.Size = UDim2.new(1, -20, 0, 20)
-flyWarning.Position = UDim2.new(0, 10, 0, 175)
-flyWarning.Text = "⚠️ Use com moderação para evitar kick"
-flyWarning.TextColor3 = colors.warning
-flyWarning.Font = Enum.Font.Gotham
-flyWarning.TextSize = 10
-flyWarning.TextXAlignment = Enum.TextXAlignment.Left
+refreshMobsBtn.MouseEnter:Connect(function()
+    tweenService:Create(refreshMobsBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.accent}):Play()
+end)
+refreshMobsBtn.MouseLeave:Connect(function()
+    tweenService:Create(refreshMobsBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
 
 -- ================ PÁGINA 4: BYPASS ================
 
@@ -781,10 +710,10 @@ page4.Visible = false
 local bypassTitle = Instance.new("TextLabel")
 bypassTitle.Parent = page4
 bypassTitle.BackgroundTransparency = 1
-bypassTitle.Size = UDim2.new(1, -20, 0, 30)
+bypassTitle.Size = UDim2.new(1, -20, 0, 35)
 bypassTitle.Position = UDim2.new(0, 10, 0, 10)
-bypassTitle.Text = "🛡️ BYPASS ANTI-CHEAT"
-bypassTitle.TextColor3 = colors.accent2
+bypassTitle.Text = "🛡️ BYPASS"
+bypassTitle.TextColor3 = colors.accent
 bypassTitle.Font = Enum.Font.GothamBold
 bypassTitle.TextSize = 20
 bypassTitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -792,53 +721,60 @@ bypassTitle.TextXAlignment = Enum.TextXAlignment.Left
 local bypassCard = Instance.new("Frame")
 bypassCard.Parent = page4
 bypassCard.BackgroundColor3 = colors.secondary
-bypassCard.Size = UDim2.new(0, 360, 0, 180)
-bypassCard.Position = UDim2.new(0.5, -180, 0, 50)
+bypassCard.Size = UDim2.new(0, 340, 0, 150)
+bypassCard.Position = UDim2.new(0.5, -170, 0, 55)
 
 local bypassCardCorner = Instance.new("UICorner")
-bypassCardCorner.CornerRadius = UDim.new(0, 10)
+bypassCardCorner.CornerRadius = UDim.new(0, 12)
 bypassCardCorner.Parent = bypassCard
 
 local bypassInfo = Instance.new("TextLabel")
 bypassInfo.Parent = bypassCard
 bypassInfo.BackgroundTransparency = 1
-bypassInfo.Size = UDim2.new(1, -20, 0, 60)
+bypassInfo.Size = UDim2.new(1, -20, 0, 80)
 bypassInfo.Position = UDim2.new(0, 10, 0, 10)
-bypassInfo.Text = "✓ Bloqueia detecção de anti-cheat\n✓ Spoof de gravidade\n✓ Proteção contra kick\n✓ Desativa remotes suspeitos"
-bypassInfo.TextColor3 = colors.success
+bypassInfo.Text = "✓ Bloqueia detecção de anti-cheat\n✓ Proteção contra kick\n✓ Desativa remotes suspeitos"
+bypassInfo.TextColor3 = colors.textDim
 bypassInfo.Font = Enum.Font.Gotham
-bypassInfo.TextSize = 12
+bypassInfo.TextSize = 13
 bypassInfo.TextXAlignment = Enum.TextXAlignment.Left
 
 local bypassToggleBtn = Instance.new("TextButton")
 bypassToggleBtn.Parent = bypassCard
-bypassToggleBtn.BackgroundColor3 = colors.accent2
-bypassToggleBtn.Size = UDim2.new(0, 160, 0, 40)
-bypassToggleBtn.Position = UDim2.new(0.5, -80, 0, 80)
+bypassToggleBtn.BackgroundColor3 = colors.tertiary
+bypassToggleBtn.Size = UDim2.new(0, 150, 0, 40)
+bypassToggleBtn.Position = UDim2.new(0.5, -75, 0, 100)
 bypassToggleBtn.Text = "ATIVAR BYPASS"
 bypassToggleBtn.TextColor3 = colors.text
 bypassToggleBtn.Font = Enum.Font.GothamBold
-bypassToggleBtn.TextSize = 14
+bypassToggleBtn.TextSize = 12
 
 local bypassToggleCorner = Instance.new("UICorner")
 bypassToggleCorner.CornerRadius = UDim.new(0, 8)
 bypassToggleCorner.Parent = bypassToggleBtn
 
+bypassToggleBtn.MouseEnter:Connect(function()
+    tweenService:Create(bypassToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.accent}):Play()
+end)
+bypassToggleBtn.MouseLeave:Connect(function()
+    tweenService:Create(bypassToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = colors.tertiary}):Play()
+end)
+
 local bypassStatus = Instance.new("TextLabel")
 bypassStatus.Parent = bypassCard
-bypassStatus.BackgroundColor3 = colors.background
-bypassStatus.Size = UDim2.new(0, 320, 0, 30)
-bypassStatus.Position = UDim2.new(0.5, -160, 0, 130)
+bypassStatus.BackgroundColor3 = colors.tertiary
+bypassStatus.Size = UDim2.new(0, 300, 0, 30)
+bypassStatus.Position = UDim2.new(0.5, -150, 0, 150)
 bypassStatus.Text = "Status: Inativo"
 bypassStatus.TextColor3 = colors.textDim
 bypassStatus.Font = Enum.Font.Gotham
 bypassStatus.TextSize = 12
 
 local bypassStatusCorner = Instance.new("UICorner")
-bypassStatusCorner.CornerRadius = UDim.new(0, 6)
+bypassStatusCorner.CornerRadius = UDim.new(0, 8)
 bypassStatusCorner.Parent = bypassStatus
 
--- ================ PÁGINA 5: CRÉDITOS ================
+-- ================ PÁGINA 5: SOBRE ================
 
 local page5 = Instance.new("Frame")
 page5.Parent = content
@@ -846,95 +782,54 @@ page5.BackgroundTransparency = 1
 page5.Size = UDim2.new(1, 0, 1, 0)
 page5.Visible = false
 
-local creditsTitle = Instance.new("TextLabel")
-creditsTitle.Parent = page5
-creditsTitle.BackgroundTransparency = 1
-creditsTitle.Size = UDim2.new(1, -20, 0, 30)
-creditsTitle.Position = UDim2.new(0, 10, 0, 10)
-creditsTitle.Text = "👑 CRÉDITOS"
-creditsTitle.TextColor3 = colors.gold
-creditsTitle.Font = Enum.Font.GothamBold
-creditsTitle.TextSize = 20
-creditsTitle.TextXAlignment = Enum.TextXAlignment.Left
+local aboutTitle = Instance.new("TextLabel")
+aboutTitle.Parent = page5
+aboutTitle.BackgroundTransparency = 1
+aboutTitle.Size = UDim2.new(1, -20, 0, 35)
+aboutTitle.Position = UDim2.new(0, 10, 0, 10)
+aboutTitle.Text = "👑 SOBRE"
+aboutTitle.TextColor3 = colors.accent
+aboutTitle.Font = Enum.Font.GothamBold
+aboutTitle.TextSize = 20
+aboutTitle.TextXAlignment = Enum.TextXAlignment.Left
 
-local creditsCard = Instance.new("Frame")
-creditsCard.Parent = page5
-creditsCard.BackgroundColor3 = colors.secondary
-creditsCard.Size = UDim2.new(0, 360, 0, 250)
-creditsCard.Position = UDim2.new(0.5, -180, 0, 50)
+local aboutCard = Instance.new("Frame")
+aboutCard.Parent = page5
+aboutCard.BackgroundColor3 = colors.secondary
+aboutCard.Size = UDim2.new(0, 340, 0, 200)
+aboutCard.Position = UDim2.new(0.5, -170, 0, 55)
 
-local creditsCardCorner = Instance.new("UICorner")
-creditsCardCorner.CornerRadius = UDim.new(0, 15)
-creditsCardCorner.Parent = creditsCard
+local aboutCardCorner = Instance.new("UICorner")
+aboutCardCorner.CornerRadius = UDim.new(0, 12)
+aboutCardCorner.Parent = aboutCard
 
--- Avatar
-local avatar = Instance.new("Frame")
-avatar.Parent = creditsCard
-avatar.BackgroundColor3 = colors.accent
-avatar.Size = UDim2.new(0, 80, 0, 80)
-avatar.Position = UDim2.new(0.5, -40, 0, 20)
+local aboutText = Instance.new("TextLabel")
+aboutText.Parent = aboutCard
+aboutText.BackgroundTransparency = 1
+aboutText.Size = UDim2.new(1, -20, 0, 80)
+aboutText.Position = UDim2.new(0, 10, 0, 10)
+aboutText.Text = "STELK HUB\nVersão 7.0 - Leaf World Edition\n\nCriado por Stelk\nFevereiro 2026"
+aboutText.TextColor3 = colors.textDim
+aboutText.Font = Enum.Font.Gotham
+aboutText.TextSize = 14
+aboutText.TextXAlignment = Enum.TextXAlignment.Left
 
-local avatarCorner = Instance.new("UICorner")
-avatarCorner.CornerRadius = UDim.new(1, 0)
-avatarCorner.Parent = avatar
+local creditsLine = Instance.new("Frame")
+creditsLine.Parent = aboutCard
+creditsLine.BackgroundColor3 = colors.accent
+creditsLine.Size = UDim2.new(0, 300, 0, 1)
+creditsLine.Position = UDim2.new(0.5, -150, 0, 120)
+creditsLine.BackgroundTransparency = 0.5
 
-local avatarText = Instance.new("TextLabel")
-avatarText.Parent = avatar
-avatarText.BackgroundTransparency = 1
-avatarText.Size = UDim2.new(1, 0, 1, 0)
-avatarText.Text = "S"
-avatarText.TextColor3 = colors.text
-avatarText.Font = Enum.Font.GothamBold
-avatarText.TextSize = 40
-
--- Nome do Criador
-local creatorName = Instance.new("TextLabel")
-creatorName.Parent = creditsCard
-creatorName.BackgroundTransparency = 1
-creatorName.Size = UDim2.new(1, 0, 0, 30)
-creatorName.Position = UDim2.new(0, 0, 0, 110)
-creatorName.Text = "STELK"
-creatorName.TextColor3 = colors.text
-creatorName.Font = Enum.Font.GothamBold
-creatorName.TextSize = 24
-
-local creatorRole = Instance.new("TextLabel")
-creatorRole.Parent = creditsCard
-creatorRole.BackgroundTransparency = 1
-creatorRole.Size = UDim2.new(1, 0, 0, 20)
-creatorRole.Position = UDim2.new(0, 0, 0, 140)
-creatorRole.Text = "Desenvolvedor & Designer"
-creatorRole.TextColor3 = colors.textDim
-creatorRole.Font = Enum.Font.Gotham
-creatorRole.TextSize = 12
-
--- Linha divisória
-local divider = Instance.new("Frame")
-divider.Parent = creditsCard
-divider.BackgroundColor3 = colors.background
-divider.Size = UDim2.new(0, 300, 0, 1)
-divider.Position = UDim2.new(0.5, -150, 0, 170)
-
--- Versão
-local version = Instance.new("TextLabel")
-version.Parent = creditsCard
-version.BackgroundTransparency = 1
-version.Size = UDim2.new(0, 200, 0, 20)
-version.Position = UDim2.new(0.5, -100, 0, 180)
-version.Text = "Versão 6.2 - Leaf Village"
-version.TextColor3 = colors.textDim
-version.Font = Enum.Font.Gotham
-version.TextSize = 12
-
-local date = Instance.new("TextLabel")
-date.Parent = creditsCard
-date.BackgroundTransparency = 1
-date.Size = UDim2.new(0, 200, 0, 20)
-date.Position = UDim2.new(0.5, -100, 0, 200)
-date.Text = "Fevereiro 2026"
-date.TextColor3 = colors.textDim
-date.Font = Enum.Font.Gotham
-date.TextSize = 12
+local discordText = Instance.new("TextLabel")
+discordText.Parent = aboutCard
+discordText.BackgroundTransparency = 1
+discordText.Size = UDim2.new(1, 0, 0, 30)
+discordText.Position = UDim2.new(0, 0, 0, 140)
+discordText.Text = "📱 Discord: stelk_dev"
+discordText.TextColor3 = colors.textDim
+discordText.Font = Enum.Font.Gotham
+discordText.TextSize = 13
 
 -- ================ FUNÇÕES DE NAVEGAÇÃO ================
 
@@ -945,14 +840,17 @@ local function switchPage(page)
     page4.Visible = (page == 4)
     page5.Visible = (page == 5)
 
+    local positions = {30, 110, 190, 270, 350}
+    tweenService:Create(pageIndicator, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0, positions[page], 1, -5)
+    }):Play()
+
     local tabs = {tab1, tab2, tab3, tab4, tab5}
     for i = 1, 5 do
         if i == page then
-            tabs[i].TextColor3 = colors.accent
-            tabs[i].BackgroundColor3 = colors.background
+            tweenService:Create(tabs[i], TweenInfo.new(0.3), {TextColor3 = colors.accent}):Play()
         else
-            tabs[i].TextColor3 = colors.textDim
-            tabs[i].BackgroundColor3 = colors.secondary
+            tweenService:Create(tabs[i], TweenInfo.new(0.3), {TextColor3 = colors.textDim}):Play()
         end
     end
 end
@@ -965,22 +863,45 @@ tab5.MouseButton1Click:Connect(function() switchPage(5) end)
 
 -- ================ FUNÇÕES DOS BOTÕES ================
 
-local function updateHomePage()
-    local world, color = detectWorld()
+local function updateWorldInfo()
+    local world, color = detectLeafWorld()
     worldName.Text = world
     worldName.TextColor3 = color
-
+    
+    if inLeafWorld then
+        worldStatus.Text = "✅ Você está no Leaf World"
+        worldStatus.TextColor3 = colors.success
+    else
+        worldStatus.Text = "❌ Fora do Leaf World - Estrelas indisponíveis"
+        worldStatus.TextColor3 = colors.danger
+    end
+    
     gems, gold = getGemsAndGold()
     gemsValue.Text = tostring(gems)
     goldValue.Text = tostring(gold)
+    
+    -- Atualiza status na página de stars
+    if inLeafWorld then
+        worldStatusStars.Text = "✅ Leaf World detectado - Estrelas disponíveis"
+        worldStatusStars.TextColor3 = colors.success
+    else
+        worldStatusStars.Text = "❌ Fora do Leaf World - Entre no Leaf World para ver as Stars"
+        worldStatusStars.TextColor3 = colors.danger
+    end
 end
 
 local function updateStarsList()
+    if not inLeafWorld then
+        starsList.Text = "🚫 FORA DO LEAF WORLD\n\nEntre no Leaf World para ver as Stars disponíveis"
+        starsList.TextColor3 = colors.danger
+        return
+    end
+    
     stars = findStars()
     local text = "STARS ENCONTRADAS: " .. #stars .. "/6\n\n"
-
+    
     if #stars == 0 then
-        text = text .. "Nenhuma Star encontrada.\n\nProcure por objetos chamados:\n'Star' (com S maiúsculo)"
+        text = text .. "Nenhuma Star encontrada no Leaf World.\n\nTente:\n- Se aproximar da área das Stars\n- Usar o botão ATUALIZAR"
     else
         for i, star in ipairs(stars) do
             local dist = "?"
@@ -994,30 +915,60 @@ local function updateStarsList()
         spinStarBtn.Text = "🎯 GIRAR " .. stars[1].Name
         starInfo.Text = "Selecionada: " .. stars[1].Name
     end
-
+    
     starsList.Text = text
+    starsList.TextColor3 = colors.textDim
 end
 
--- Botões da Home
-verifyBtn.MouseButton1Click:Connect(function() print("Verify clicado") end)
-mountsBtn.MouseButton1Click:Connect(function() print("Mounts clicado") end)
-questBtn.MouseButton1Click:Connect(function() print("Quest clicado") end)
-settingsBtn.MouseButton1Click:Connect(function() print("Settings clicado") end)
-codesBtn.MouseButton1Click:Connect(function() print("Codes clicado") end)
-profileBtn.MouseButton1Click:Connect(function() print("Profile clicado") end)
-teleportBtn.MouseButton1Click:Connect(function() print("Teleport clicado") end)
-shopBtn.MouseButton1Click:Connect(function() print("Shop clicado") end)
-dailyBtn.MouseButton1Click:Connect(function() print("Daily clicado") end)
+local function updateMobsList()
+    mobs = findMobs()
+    local text = "MOBS PRÓXIMOS: " .. #mobs .. "\n\n"
+    
+    if #mobs == 0 then
+        text = text .. "Nenhum mob encontrado nas proximidades."
+    else
+        for i, mob in ipairs(mobs) do
+            local dist = "?"
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local root = player.Character.HumanoidRootPart
+                if mob:FindFirstChild("HumanoidRootPart") then
+                    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+                    dist = math.floor((root.Position - mobRoot.Position).Magnitude) .. "m"
+                end
+            end
+            local health = "?"
+            if mob:FindFirstChildOfClass("Humanoid") then
+                health = math.floor(mob:FindFirstChildOfClass("Humanoid").Health) .. " HP"
+            end
+            text = text .. i .. ". " .. mob.Name .. " [" .. dist .. "] " .. health .. "\n"
+        end
+    end
+    
+    mobsList.Text = text
+end
 
--- Botões das Stars
+-- Conectar botões
 refreshStarsBtn.MouseButton1Click:Connect(updateStarsList)
+refreshMobsBtn.MouseButton1Click:Connect(updateMobsList)
 
 spinStarBtn.MouseButton1Click:Connect(function()
+    if not inLeafWorld then
+        starsList.Text = "🚫 FORA DO LEAF WORLD\n\nNão é possível girar Stars fora do Leaf World"
+        return
+    end
+    
     if selectedStar and selectedStar.Parent then
         if spinStar(selectedStar) then
             starsList.Text = "✅ GIRADO: " .. selectedStar.Name .. "\n\n" .. starsList.Text
+            -- Animação de sucesso
+            tweenService:Create(spinStarBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.success}):Play()
+            task.wait(0.3)
+            tweenService:Create(spinStarBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.tertiary}):Play()
         else
             starsList.Text = "❌ FALHOU: " .. selectedStar.Name .. "\n\n" .. starsList.Text
+            tweenService:Create(spinStarBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.danger}):Play()
+            task.wait(0.3)
+            tweenService:Create(spinStarBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.tertiary}):Play()
         end
     else
         updateStarsList()
@@ -1025,13 +976,25 @@ spinStarBtn.MouseButton1Click:Connect(function()
 end)
 
 autoSpinBtn.MouseButton1Click:Connect(function()
+    if not inLeafWorld then
+        starsList.Text = "🚫 FORA DO LEAF WORLD\n\nAuto Spin só funciona no Leaf World"
+        return
+    end
+    
     spinEnabled = not spinEnabled
     if spinEnabled then
         autoSpinBtn.Text = "⏹️ PARAR SPIN"
-        autoSpinBtn.BackgroundColor3 = colors.danger
+        tweenService:Create(autoSpinBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.danger}):Play()
 
         task.spawn(function()
             while spinEnabled do
+                if not inLeafWorld then
+                    spinEnabled = false
+                    autoSpinBtn.Text = "⚡ AUTO SPIN"
+                    tweenService:Create(autoSpinBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.tertiary}):Play()
+                    break
+                end
+                
                 local currentStars = findStars()
                 for _, star in ipairs(currentStars) do
                     spinStar(star)
@@ -1042,45 +1005,21 @@ autoSpinBtn.MouseButton1Click:Connect(function()
         end)
     else
         autoSpinBtn.Text = "⚡ AUTO SPIN"
-        autoSpinBtn.BackgroundColor3 = colors.secondary
+        tweenService:Create(autoSpinBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.tertiary}):Play()
     end
 end)
 
--- Botões do Fly
-flyToggleBtn.MouseButton1Click:Connect(function()
-    toggleFly()
-    if flyEnabled then
-        flyToggleBtn.Text = "DESATIVAR FLY"
-        flyToggleBtn.BackgroundColor3 = colors.danger
-    else
-        flyToggleBtn.Text = "ATIVAR FLY"
-        flyToggleBtn.BackgroundColor3 = colors.secondary
-    end
-end)
-
-speedMinus.MouseButton1Click:Connect(function()
-    flySpeed = math.max(5, flySpeed - 2)
-    speedValue.Text = tostring(flySpeed)
-    speedLabel.Text = "Velocidade: " .. flySpeed
-end)
-
-speedPlus.MouseButton1Click:Connect(function()
-    flySpeed = math.min(30, flySpeed + 2)
-    speedValue.Text = tostring(flySpeed)
-    speedLabel.Text = "Velocidade: " .. flySpeed
-end)
-
--- Botões do Bypass
+-- Bypass
 bypassToggleBtn.MouseButton1Click:Connect(function()
     toggleBypass()
     if bypassActive then
         bypassToggleBtn.Text = "BYPASS ATIVO"
-        bypassToggleBtn.BackgroundColor3 = colors.success
+        tweenService:Create(bypassToggleBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.success}):Play()
         bypassStatus.Text = "Status: Ativo - Protegido"
         bypassStatus.TextColor3 = colors.success
     else
         bypassToggleBtn.Text = "ATIVAR BYPASS"
-        bypassToggleBtn.BackgroundColor3 = colors.accent2
+        tweenService:Create(bypassToggleBtn, TweenInfo.new(0.3), {BackgroundColor3 = colors.tertiary}):Play()
         bypassStatus.Text = "Status: Inativo"
         bypassStatus.TextColor3 = colors.textDim
     end
@@ -1088,36 +1027,42 @@ end)
 
 -- Fechar
 closeBtn.MouseButton1Click:Connect(function()
-    if flyConnection then
-        flyConnection:Disconnect()
-    end
     if spinConnection then
         spinConnection:Disconnect()
     end
+    -- Animação de saída
+    tweenService:Create(mainFrame, TweenInfo.new(0.3), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0)
+    }):Play()
+    task.wait(0.3)
     screenGui:Destroy()
 end)
 
 -- Atualizações automáticas
 task.spawn(function()
     while true do
-        updateHomePage()
+        updateWorldInfo()
+        if page2.Visible and inLeafWorld then
+            updateStarsList()
+        end
         task.wait(2)
     end
 end)
 
 task.spawn(function()
     while true do
-        if page2.Visible then
-            updateStarsList()
+        if page3.Visible then
+            updateMobsList()
         end
         task.wait(3)
     end
 end)
 
 -- Inicialização
-updateHomePage()
+updateWorldInfo()
 updateStarsList()
+updateMobsList()
 switchPage(1)
 
-print("✅ Stelk Hub v6.2 - Leaf Village carregado!")
-print("📌 Fly corrigido | Stars: máximo 6 | Mundo: Leaf Village")
+print("✅ Stelk Hub v7.0 - Leaf World Edition carregado!")
